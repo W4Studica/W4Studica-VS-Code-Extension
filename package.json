@@ -1,92 +1,112 @@
 {
-	"name": "vmxpi-wsr",
-	"displayName": "WSR VMX",
-	"description": "WSR (Worldskills Robotics) VMX Extension",
-	"icon": "resources/VMX_WSR_128.png",
-	"publisher": "Kauailabs",
-	"version": "1.0.0",
-	"repository": {
-		"type": "git",
-		"url": "https://github.com/kauailabs/VMXVSCodeExtension_studica_wsr"
-	},
-	"engines": {
-		"vscode": "^1.41.0"
-	},
-	"categories": [
-		"Other"
-	],
-	"activationEvents": [
-		"onCommand:vmxpi-wsr.updateWPILib",
-		"onCommand:vmxpi-wsr.setVMXPiTarget",
-		"onCommand:vmxpi-wsr.checkGradleStatus",
-		"onCommand:vmxpi-wsr.openCommandPalette"
-	],
-	"main": "./out/extension.js",
-	"contributes": {
-		"commands": [
-			{
-				"command": "vmxpi-wsr.updateWPILib",
-				"title": "Update WPILib Version",
-				"category": "VMX WSR"
-			},
-			{
-				"command": "vmxpi-wsr.setVMXPiTarget",
-				"title": "Set the deploy target to VMX (from RoboRIO)",
-				"category": "VMX WSR"
-			},
-			{
-				"command": "vmxpi-wsr.checkGradleStatus",
-				"title": "Verify the Project's build.gradle file",
-				"category": "VMX WSR"
-			},
-			{
-				"command": "vmxpi-wsr.openCommandPalette",
-				"title": "Open VMX WSR Command Palette",
-				"category": "VMX WSR",
-				"icon": "resources/VMX_WSR_128.png"
-			}
-		],
-		"menus": {
-			"commandPalette": [
-				{
-					"command": "vmxpi-wsr.openCommandPalette",
-					"when": "false"
-				}
-			],
-			"editor/title": [
-				{
-					"command": "vmxpi-wsr.openCommandPalette",
-					"group": "navigation@9"
-				}
-			]
-		}
-	},
-	"scripts": {
-		"vscode:prepublish": "npm run compile",
-		"compile": "tsc -p ./",
-		"watch": "tsc -watch -p ./",
-		"pretest": "npm run compile && npm run lint",
-		"lint": "eslint src --ext ts",
-		"test": "node ./out/test/runTest.js"
-	},
-	"devDependencies": {
-		"@types/glob": "^7.1.3",
-		"@types/mocha": "^8.0.4",
-		"@types/node": "^12.11.7",
-		"@types/node-fetch": "^2.5.8",
-		"@types/vscode": "^1.41.0",
-		"@types/xml2js": "^0.4.8",
-		"@typescript-eslint/eslint-plugin": "^4.14.1",
-		"@typescript-eslint/parser": "^4.14.1",
-		"eslint": "^7.19.0",
-		"glob": "^7.1.6",
-		"mocha": "^8.2.1",
-		"typescript": "^4.1.3",
-		"vscode-test": "^1.5.0"
-	},
-	"dependencies": {
-		"node-fetch": "^2.6.0",
-		"tsc": "^1.20150623.0",
-		"xml2js": "^0.4.23"
-	}
+  "name": "vmxpi-wsr",
+  "displayName": "W4Studica",
+  "description": "W4Studica release installer, SystemCore / VMX target switching and offline builds",
+  "icon": "resources/VMX_WSR_128.png",
+  "publisher": "Kauailabs",
+  "version": "2.0.1",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kimseungsu-zzz/VMXVSCodeExtension_studica_wsr"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:vmxpi-wsr.setVMXPiTarget",
+    "onCommand:vmxpi-wsr.setSystemCoreTarget",
+    "onCommand:vmxpi-wsr.updateW4Studica",
+    "onCommand:vmxpi-wsr.saveOffline",
+    "onCommand:vmxpi-wsr.openCommandPalette"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "vmxpi-wsr.setVMXPiTarget",
+        "title": "Change the deploy target to VMX (from SystemCore)",
+        "category": "W4Studica"
+      },
+      {
+        "command": "vmxpi-wsr.setSystemCoreTarget",
+        "title": "Change the deploy target to SystemCore (from VMX)",
+        "category": "W4Studica"
+      },
+      {
+        "command": "vmxpi-wsr.updateW4Studica",
+        "title": "Update W4Studica Version",
+        "category": "W4Studica"
+      },
+      {
+        "command": "vmxpi-wsr.saveOffline",
+        "title": "Save W4Studica Offline",
+        "category": "W4Studica"
+      },
+      {
+        "command": "vmxpi-wsr.openCommandPalette",
+        "title": "Open W4Studica Command Palette",
+        "category": "W4Studica",
+        "icon": "resources/VMX_WSR_128.png"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "vmxpi-wsr.openCommandPalette",
+          "when": "false"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "vmxpi-wsr.openCommandPalette",
+          "group": "navigation@9"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "W4Studica",
+      "properties": {
+        "w4studica.gradleRIORepository": {
+          "type": "string",
+          "default": "W4Studica/GradleRIO",
+          "description": "GitHub owner/repo containing the prebuilt GradleRIO releases."
+        },
+        "w4studica.allwpilibRepository": {
+          "type": "string",
+          "default": "W4Studica/allwpilib",
+          "description": "GitHub owner/repo containing the prebuilt allwpilib releases."
+        },
+        "w4studica.includePrereleases": {
+          "type": "boolean",
+          "default": true,
+          "description": "Include prereleases when selecting the newest compatible W4Studica release pair."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "node node_modules/typescript/bin/tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "node node_modules/eslint/bin/eslint.js src --ext ts",
+    "test": "node node_modules/mocha/bin/mocha --ui tdd \"out/test/unit/**/*.test.js\""
+  },
+  "devDependencies": {
+    "@types/mocha": "^8.0.4",
+    "@types/node": "20.17.0",
+    "@types/node-fetch": "^2.5.8",
+    "@types/vscode": "1.85.0",
+    "@typescript-eslint/eslint-plugin": "^4.14.1",
+    "@typescript-eslint/parser": "^4.14.1",
+    "eslint": "^7.19.0",
+    "mocha": "^8.2.1",
+    "typescript": "5.6.3"
+  },
+  "dependencies": {
+    "node-fetch": "^2.7.0"
+  }
 }

@@ -1,0 +1,104 @@
+// Included in the prebuilt allwpilib ZIP. No WPILib/VMX source compilation on the user's PC.
+// w4studicaBundleRoot is set by the extension before applying this script.
+def vmxRoot = new File(w4studicaBundleRoot, 'vmx')
+def vmxLib = new File(vmxRoot, 'linuxarm64')
+def vmxHeaders = new File(vmxRoot, 'include')
+def vmxTarget = deploy.targets.find { it.class.name.contains('.deploy.vmx.VmxPi') }
+if (vmxTarget == null) { throw new GradleException('W4Studica: VmxPi deploy target is missing') }
+
+['libhalsim_vmx.so', 'libhalsim_vmxd.so', 'libhalsim_vmx_studica.so', 'libstudica_drivers.so'].each { name ->
+    if (!new File(vmxLib, name).isFile()) { throw new GradleException('W4Studica release is missing ' + name) }
+}
+
+// Separate deploy artifact also handles Java programs, which cannot link native libraries themselves.
+vmxTarget.artifacts.create('w4studicaRuntime', vmxTarget.getArtifactTypeClass('FileTreeArtifact')) {
+    files = fileTree(vmxLib) { include '*.so', '*.so.*' }
+    directory = vmxTarget.libraryDirectory
+}
+vmxTarget.artifacts.all { artifact ->
+    if (artifact.hasProperty('environment')) {
+        artifact.environment.put('HALSIMVMX_BACKEND', vmxTarget.libraryDirectory + '/libhalsim_vmx_studica.so')
+        def debugHal = artifact.hasProperty('debugJni') ? artifact.debugJni.get() : vmxTarget.buildType.get() == 'debug'
+        artifact.halsimExtensions.replaceAll { name ->
+            name.toString() == 'libhalsim_vmx.so' && debugHal ? 'libhalsim_vmxd.so' : name.toString()
+        }
+    }
+    if (artifact.hasProperty('directory') && artifact.directory instanceof org.gradle.api.provider.Property &&
+            artifact.directory.present && artifact.directory.get() == '/home/systemcore/deploy') {
+        artifact.directory.set(vmxTarget.homeDirectory + '/deploy')
+    }
+}
+
+if (plugins.hasPlugin('cpp')) {
+    // Proprietary/image-specific VMX HAL headers and library still come from the user's robot.
+    // They are never redistributed in the release bundle.
+    def sdkCache = file('.w4studica/vmx-sdk')
+    // Keep GradleRIO's sdkPath() contract. Restore its build-directory copy from
+    // the persistent cache before compiling, so `clean build` needs no robot.
+    def sdkHeaders = vmxTarget.sdkPath('/usr/local/include/vmxpi')
+    def sdkLibrary = vmxTarget.sdkPath('/usr/local/lib/vmxpi/libvmxpi_hal_cpp.so')
+    def sdkReady = { new File(sdkHeaders, 'VMXPi.h').isFile() && sdkLibrary.isFile() }
+    def cacheReady = { new File(sdkCache, 'usr/local/include/vmxpi/VMXPi.h').isFile() &&
+        new File(sdkCache, 'usr/local/lib/vmxpi/libvmxpi_hal_cpp.so').isFile() }
+    tasks.named('fetchVmxSdk' + vmxTarget.name) { fetchTask ->
+        def sdkOutput = fetchTask.sdkDirectory
+        onlyIf {
+            if (!project.hasProperty('refetchVmxSdk')) {
+                if (!sdkReady() && cacheReady()) {
+                    project.copy { from(sdkCache); into(sdkOutput.get().asFile) }
+                }
+                if (sdkReady() && !cacheReady()) {
+                    project.copy { from(sdkOutput.get().asFile); into(sdkCache) }
+                }
+            }
+            project.hasProperty('refetchVmxSdk') || !sdkReady()
+        }
+        doLast { project.copy { from(sdkOutput.get().asFile); into(sdkCache) } }
+    }
+    tasks.withType(org.gradle.language.nativeplatform.tasks.AbstractNativeCompileTask).configureEach {
+        dependsOn tasks.named('fetchVmxSdk' + vmxTarget.name)
+    }
+    tasks.withType(org.gradle.nativeplatform.tasks.AbstractLinkTask).configureEach {
+        dependsOn tasks.named('fetchVmxSdk' + vmxTarget.name)
+    }
+    model {
+        repositories {
+            libs(org.gradle.nativeplatform.PrebuiltLibraries) {
+                w4studicaExtension {
+                    headers.srcDir vmxHeaders
+                    binaries.withType(org.gradle.nativeplatform.SharedLibraryBinary) {
+                        sharedLibraryFile = new File(vmxLib, buildType.name == 'debug' ? 'libhalsim_vmxd.so' : 'libhalsim_vmx.so')
+                    }
+                }
+                w4studicaBackend {
+                    headers.srcDir vmxHeaders
+                    binaries.withType(org.gradle.nativeplatform.SharedLibraryBinary) {
+                        sharedLibraryFile = new File(vmxLib, 'libhalsim_vmx_studica.so')
+                    }
+                }
+                w4studicaDrivers {
+                    headers.srcDir vmxHeaders
+                    binaries.withType(org.gradle.nativeplatform.SharedLibraryBinary) {
+                        sharedLibraryFile = new File(vmxLib, 'libstudica_drivers.so')
+                    }
+                }
+            }
+        }
+        components {
+            all { component ->
+                if (component instanceof org.gradle.nativeplatform.NativeExecutableSpec) {
+                    component.binaries.withType(org.gradle.nativeplatform.NativeExecutableBinarySpec) { binary ->
+                        if (binary.targetPlatform.name == wpi.platforms.linuxarm64) {
+                            binary.lib library: 'w4studicaExtension', linkage: 'shared'
+                            binary.lib library: 'w4studicaBackend', linkage: 'shared'
+                            binary.lib library: 'w4studicaDrivers', linkage: 'shared'
+                            binary.cppCompiler.args '-I' + sdkHeaders.path
+                            binary.linker.args sdkLibrary.path, '-Wl,-rpath,/usr/local/lib/vmxpi',
+                                '-Wl,-rpath-link,' + sdkLibrary.parent, '-Wl,--allow-shlib-undefined'
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
