@@ -2,7 +2,7 @@
 
 ## 2.0.1
 
-- 대용량 GitHub 릴리즈의 여러 ZIP을 각각 검증하고 하나의 설치로 저장합니다 (manifest schema 2).
+- Verify each ZIP in large GitHub releases and install all parts as one version (manifest schema 2).
 
 - Scope local Maven routing to the selected WPILib version so external dependencies keep resolving normally.
 - Package/select separate release and debug VMX extensions to avoid loading two HAL instances.
