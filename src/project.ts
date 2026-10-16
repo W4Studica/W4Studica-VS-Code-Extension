@@ -11,11 +11,16 @@ const end = '// END W4Studica ';
 export function block(name: string, body: string): string { return begin + name + '\n' + body.trim() + '\n' + end + name; }
 
 export function removeBlock(text: string, name: string): string {
-    const first = text.indexOf(begin + name + '\n');
+    const marker = begin + name;
+    let first = text.indexOf(marker);
+    while (first >= 0 && !/^\r?\n/.test(text.slice(first + marker.length))) {
+        first = text.indexOf(marker, first + marker.length);
+    }
     if (first < 0) { return text; }
     const last = text.indexOf(end + name, first);
     if (last < 0) { throw new Error('Incomplete W4Studica managed block: ' + name); }
-    const start = first > 0 && text[first - 1] === '\n' ? first - 1 : first;
+    let start = first > 0 && text[first - 1] === '\n' ? first - 1 : first;
+    if (start > 0 && text[start - 1] === '\r') { start--; }
     return text.slice(0, start) + text.slice(last + (end + name).length).replace(/^\r?\n/, '');
 }
 

@@ -109,6 +109,22 @@ suite('Project conversion', () => {
         assert.strictEqual(text, first);
         for (const name of ['libraries', 'runtime', 'connection']) { assert.strictEqual(text.split('// BEGIN W4Studica ' + name).length, 2); }
     });
+    test('CRLF saves preserve target round trips and replace managed settings', () => {
+        const crlf = (text: string) => text.replace(/\r?\n/g, '\r\n');
+        const vmx = crlf(configureBuild(systemcore, installation, 'vmx'));
+        const updated = configureBuild(vmx, installation, 'vmx');
+        for (const name of ['libraries', 'runtime', 'connection']) {
+            assert.strictEqual(updated.split('// BEGIN W4Studica ' + name).length, 2);
+        }
+        const restored = configureBuild(crlf(updated), installation, 'systemcore');
+        assert.strictEqual(detectTarget(restored), 'systemcore');
+        assert.ok(!restored.includes('VMX_PASSWORD'));
+        assert.ok(!restored.includes('apply from:'));
+        assert.ok(restored.includes("useCustomSystemcoreHostName('robot.local')"));
+        assert.strictEqual(restored.split('// BEGIN W4Studica libraries').length, 2);
+        const settings = crlf(configureSettings("rootProject.name = 'Robot'\r\n", installation));
+        assert.strictEqual(configureSettings(settings, installation).split('BEGIN W4Studica plugin repositories').length, 2);
+    });
     test('existing settings keep root name and plugin repositories, local release repositories come first', () => {
         const original = "pluginManagement { repositories { mavenCentral() } }\nrootProject.name = 'Robot'";
         const result = configureSettings(configureSettings(original, installation), installation);

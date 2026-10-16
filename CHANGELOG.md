@@ -2,6 +2,9 @@
 
 ## 2.0.1
 
+- Replacement build: handle CRLF-managed Gradle blocks when updating releases or switching back to SystemCore.
+- Add regression coverage for CRLF target round trips and settings updates.
+
 - Verify each ZIP in large GitHub releases and install all parts as one version (manifest schema 2).
 
 - Scope local Maven routing to the selected WPILib version so external dependencies keep resolving normally.
