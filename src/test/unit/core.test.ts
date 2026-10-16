@@ -81,9 +81,8 @@ suite('Project conversion', () => {
         assert.ok(converted.includes('src/main/include'));
         assert.ok(converted.includes('// systemcoreDebug and wpi.platforms.systemcore'));
         assert.ok(converted.includes('"wpi.platforms.systemcore { }"'));
-        assert.ok(converted.indexOf('username =') < converted.indexOf('team ='));
-        assert.ok(converted.includes("username = System.getenv('VMX_USER') ?: 'ubuntu'"));
-        assert.ok(converted.includes("System.getenv('VMX_PASSWORD') ?: 'password'"));
+        assert.ok(!converted.includes('username ='));
+        assert.ok(!converted.includes('password ='));
         assert.ok(!converted.includes('BEGIN W4Studica connection'));
         assert.ok(!converted.includes('END W4Studica connection'));
         assert.ok(!converted.includes('W4Studica original host'));
@@ -93,8 +92,7 @@ suite('Project conversion', () => {
     });
     test('SystemCore return restores custom hostname and keeps edits made while on VMX', () => {
         const vmx = configureBuild(systemcore, installation, 'vmx')
-            .replace("username = System.getenv('VMX_USER') ?: 'ubuntu'\npassword = System.getenv('VMX_PASSWORD') ?: 'password'",
-                "// BEGIN W4Studica connection\nusername = System.getenv('VMX_USER') ?: 'ubuntu'\npassword = System.getenv('VMX_PASSWORD') ?: 'password'\n// END W4Studica connection")
+            .replace("team = project.wpilib.getTeamNumber()", "username = System.getenv('VMX_USER') ?: 'ubuntu'\n    password = System.getenv('VMX_PASSWORD') ?: 'password'\n    team = project.wpilib.getTeamNumber()")
             + '\ndef customUserSetting = 42\n';
         const restored = configureBuild(vmx, installation, 'systemcore', extractSystemcoreHostCalls(systemcore));
         assert.strictEqual(detectTarget(restored), 'systemcore');
@@ -119,14 +117,16 @@ suite('Project conversion', () => {
         const first = text;
         for (let i = 0; i < 3; i++) { text = configureBuild(text, installation, 'vmx'); }
         assert.strictEqual(text, first);
-        assert.strictEqual(text.split("username = System.getenv('VMX_USER') ?: 'ubuntu'").length, 2);
+        assert.ok(!text.includes('VMX_USER'));
+        assert.ok(!text.includes('VMX_PASSWORD'));
         assert.strictEqual(text.split("wpilib/2027/W4Studica/w4studica.gradle").length, 2);
     });
     test('CRLF saves preserve target round trips and replace managed settings', () => {
         const crlf = (text: string) => text.replace(/\r?\n/g, '\r\n');
         const vmx = crlf(configureBuild(systemcore, installation, 'vmx'));
         const updated = configureBuild(vmx, installation, 'vmx');
-        assert.strictEqual(updated.split("username = System.getenv('VMX_USER') ?: 'ubuntu'").length, 2);
+        assert.ok(!updated.includes('VMX_USER'));
+        assert.ok(!updated.includes('VMX_PASSWORD'));
         assert.strictEqual(updated.split("wpilib/2027/W4Studica/w4studica.gradle").length, 2);
         const restored = configureBuild(crlf(updated), installation, 'systemcore', extractSystemcoreHostCalls(systemcore));
         assert.strictEqual(detectTarget(restored), 'systemcore');
@@ -274,8 +274,8 @@ suite('Offline and atomic project operations', () => {
         assert.strictEqual(state.target, 'vmx');
         assert.deepStrictEqual(state.systemcoreHostCalls, ["useCustomSystemcoreHostName('robot.local')"]);
         const vmxBuild = await io.readFile(path.join(temp, 'build.gradle'), 'utf8');
-        assert.ok(vmxBuild.includes("username = System.getenv('VMX_USER') ?: 'ubuntu'"));
-        assert.ok(vmxBuild.includes("password = System.getenv('VMX_PASSWORD') ?: 'password'"));
+        assert.ok(!vmxBuild.includes('username ='));
+        assert.ok(!vmxBuild.includes('password ='));
         assert.ok(!vmxBuild.includes('BEGIN W4Studica connection'));
         assert.ok(!vmxBuild.includes('W4Studica original host'));
         assert.strictEqual(await io.readFile(path.join(state.projectStorageDir, 'backup/build.gradle'), 'utf8'), systemcore);

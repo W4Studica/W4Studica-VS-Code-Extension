@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.0.2
+
+- Keep VMX username and password defaults inside GradleRIO; remove stale generated settings from project build.gradle files.
+- Preserve existing Gradle build files by editing only the relevant target declarations and exact legacy settings.
+
 ## 2.0.1
 
 - Replacement build: handle CRLF-managed Gradle blocks when updating releases or switching back to SystemCore.

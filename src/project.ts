@@ -58,24 +58,6 @@ export function extractSystemcoreHostCalls(text: string): string[] {
     return [];
 }
 
-function setVmxConnectionSettings(text: string): string {
-    text = removeConnectionSettings(text).replace(/\/\* W4Studica original host: [A-Za-z0-9+/=]+ \*\//g, '');
-    const mask = codeMask(text);
-    const declaration = /\b\w+\s*\(\s*getTargetTypeClass\s*\(\s*(['"])VmxPi\1\s*\)\s*\)\s*\{/g;
-    let match: RegExpExecArray | null;
-    while ((match = declaration.exec(text))) {
-        if (mask[match.index] === ' ') { continue; }
-        const open = match.index + match[0].lastIndexOf('{');
-        const close = closeBrace(mask, open);
-        const body = text.slice(open + 1, close);
-        const indent = body.match(/(?:^|\r?\n)([ \t]*)team\s*=/)?.[1] || '';
-        const newline = text.includes('\r\n') ? '\r\n' : '\n';
-        const credentials = `${newline}${indent}username = System.getenv('VMX_USER') ?: 'ubuntu'${newline}${indent}password = System.getenv('VMX_PASSWORD') ?: 'password'`;
-        return text.slice(0, open + 1) + credentials + body + text.slice(close);
-    }
-    return text;
-}
-
 // Preserve indices while hiding Groovy strings and comments from structural searches.
 export function codeMask(text: string): string {
     const chars = text.split('');
@@ -128,7 +110,7 @@ export function detectTarget(text: string): Target {
 
 function convertTarget(text: string, target: Target, systemcoreHostCalls?: string[]): string {
     const current = detectTarget(text);
-    if (current === target) { return target === 'vmx' ? setVmxConnectionSettings(text) : text; }
+    if (current === target) { return target === 'vmx' ? removeConnectionSettings(text) : text; }
     if (target === 'vmx') {
         // The existing target name is kept, so references such as deploy.targets.systemcore still work.
         text = replaceCode(text, /\bgetTargetTypeClass\s*\(\s*(['"])SystemCore\1\s*\)/g, () => "getTargetTypeClass('VmxPi')");
@@ -143,7 +125,7 @@ function convertTarget(text: string, target: Target, systemcoreHostCalls?: strin
         body = replaceCode(body, /(?:^|\n)[ \t]*(?:useDefaultSystemcoreHostName|useCustomSystemcoreHostName|setAddresses|addAddress)\s*\([^\n]*?\)\s*;?[ \t]*/g,
             (original: string) => original.startsWith('\n') ? '\n' : '');
         text = text.slice(0, open + 1) + body + text.slice(close);
-        text = setVmxConnectionSettings(text);
+        text = removeConnectionSettings(text);
     } else {
         text = removeConnectionSettings(text);
         const restoredHostCalls = systemcoreHostCalls?.length ? systemcoreHostCalls : legacyHostCalls(text);
