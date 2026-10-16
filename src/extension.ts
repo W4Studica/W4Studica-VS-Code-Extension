@@ -94,7 +94,7 @@ export function activate(context: vscode.ExtensionContext): void {
         const installation = old && old.schemaVersion === 2 && installationIsInWpilibHome(old.installation, w4Home)
             ? old.installation : await install(folder, progress);
         await configureProject(root, installation, target, w4Home);
-        vscode.window.showInformationMessage('Deploy target changed to ' + (target === 'vmx' ? 'VMX (username ubuntu, password password).' : 'SystemCore.') + ' Run Save W4Studica Offline again to prepare dependencies for this target.');
+        vscode.window.showInformationMessage('Deploy target changed to ' + (target === 'vmx' ? 'VMX-Pi.' : 'SystemCore.') + ' Run Save W4Studica Offline again to prepare dependencies for this target.');
     }
 
     command('setVMXPiTarget', (folder, progress) => changeTarget(folder, 'vmx', progress));
