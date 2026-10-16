@@ -3,7 +3,7 @@
   "displayName": "W4Studica",
   "description": "W4Studica release installer, SystemCore / VMX target switching and offline builds",
   "icon": "resources/VMX_WSR_128.png",
-  "publisher": "Kauailabs",
+  "publisher": "w4studica",
   "version": "2.0.1",
   "repository": {
     "type": "git",
