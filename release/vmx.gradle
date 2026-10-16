@@ -37,6 +37,7 @@ if (plugins.hasPlugin('cpp')) {
     // the persistent cache before compiling, so `clean build` needs no robot.
     def sdkHeaders = vmxTarget.sdkPath('/usr/local/include/vmxpi')
     def sdkLibrary = vmxTarget.sdkPath('/usr/local/lib/vmxpi/libvmxpi_hal_cpp.so')
+    def deployRequested = gradle.startParameter.taskNames.any { it.toLowerCase().contains('deploy') }
     def sdkReady = { new File(sdkHeaders, 'VMXPi.h').isFile() && sdkLibrary.isFile() }
     def cacheReady = { new File(sdkCache, 'usr/local/include/vmxpi/VMXPi.h').isFile() &&
         new File(sdkCache, 'usr/local/lib/vmxpi/libvmxpi_hal_cpp.so').isFile() }
@@ -95,8 +96,12 @@ if (plugins.hasPlugin('cpp')) {
                             binary.lib library: 'w4studicaBackend', linkage: 'shared'
                             binary.lib library: 'w4studicaDrivers', linkage: 'shared'
                             binary.cppCompiler.args '-I' + sdkHeaders.path
-                            binary.linker.args sdkLibrary.path, '-Wl,-rpath,/usr/local/lib/vmxpi',
-                                '-Wl,-rpath-link,' + sdkLibrary.parent, '-Wl,--allow-shlib-undefined'
+                            if (deployRequested || sdkLibrary.isFile()) {
+                                binary.linker.args sdkLibrary.path, '-Wl,-rpath,/usr/local/lib/vmxpi',
+                                    '-Wl,-rpath-link,' + sdkLibrary.parent, '-Wl,--allow-shlib-undefined'
+                            } else {
+                                binary.linker.args '-Wl,--unresolved-symbols=ignore-all', '-Wl,--allow-shlib-undefined'
+                            }
                         }
                     }
                 }

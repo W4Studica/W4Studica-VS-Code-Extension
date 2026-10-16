@@ -203,7 +203,17 @@ export function projectStorageDir(root: string, w4Home = path.join(os.homedir(),
 }
 
 export function migrateVmxScript(script: string): string {
-    return script.replace(/dependsOn(\s+tasks\.named\(['"]fetchVmxSdk' \+ vmxTarget\.name\))/g, 'mustRunAfter$1');
+    let migrated = script.replace(/dependsOn(\s+tasks\.named\(['"]fetchVmxSdk' \+ vmxTarget\.name\))/g, 'mustRunAfter$1');
+    if (!migrated.includes("'-Wl,--unresolved-symbols=ignore-all'")) {
+        migrated = migrated.replace(/binary\.linker\.args sdkLibrary\.path, '-Wl,-rpath,\/usr\/local\/lib\/vmxpi',\s*'-Wl,-rpath-link,' \+ sdkLibrary\.parent, '-Wl,--allow-shlib-undefined'/g,
+            `if (deployRequested || sdkLibrary.isFile()) {
+                                binary.linker.args sdkLibrary.path, '-Wl,-rpath,/usr/local/lib/vmxpi',
+                                    '-Wl,-rpath-link,' + sdkLibrary.parent, '-Wl,--allow-shlib-undefined'
+                            } else {
+                                binary.linker.args '-Wl,--unresolved-symbols=ignore-all', '-Wl,--allow-shlib-undefined'
+                            }`);
+    }
+    return migrated;
 }
 
 export async function refreshVmxScript(root: string, installation: Installation,

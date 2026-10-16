@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.0.4
+
+- Let ordinary VMX C++ builds link without a robot-only SDK library; deploy links against the SDK fetched from the robot.
+
 ## 2.0.3
 
 - Keep VMX SDK fetching out of ordinary `build` tasks; refresh existing projects to fetch the SDK only during deploy.

@@ -72,6 +72,17 @@ function zip(entries: { name: string; content: string; symlink?: boolean; declar
 }
 
 suite('Project conversion', () => {
+    test('VMX build can link without an SDK while deploy links the fetched SDK', async () => {
+        const script = await io.readFile(path.resolve(__dirname, '../../../release/vmx.gradle'), 'utf8');
+        assert.ok(script.includes("gradle.startParameter.taskNames.any { it.toLowerCase().contains('deploy') }"));
+        assert.ok(script.includes("binary.linker.args sdkLibrary.path"));
+        assert.ok(script.includes("'-Wl,--unresolved-symbols=ignore-all'"));
+        const oldScript = `binary.linker.args sdkLibrary.path, '-Wl,-rpath,/usr/local/lib/vmxpi',\n` +
+            `                                '-Wl,-rpath-link,' + sdkLibrary.parent, '-Wl,--allow-shlib-undefined'`;
+        const migrated = migrateVmxScript(oldScript);
+        assert.ok(migrated.includes("'-Wl,--unresolved-symbols=ignore-all'"));
+        assert.strictEqual(migrateVmxScript(migrated), migrated);
+    });
     test('VMX SDK fetch is an ordering constraint, not a build dependency', () => {
         const script = `tasks.withType(CompileTask).configureEach {\n  dependsOn tasks.named('fetchVmxSdk' + vmxTarget.name)\n}\n` +
             `tasks.withType(LinkTask).configureEach {\n  dependsOn tasks.named('fetchVmxSdk' + vmxTarget.name)\n}\n`;
