@@ -2,7 +2,7 @@
   "name": "vmxpi-wsr",
   "displayName": "W4Studica",
   "description": "W4Studica release installer, SystemCore / VMX target switching and offline builds",
-  "icon": "resources/VMX_WSR_128.png",
+  "icon": "resources/w4studica-icon.png",
   "publisher": "w4studica",
   "version": "2.0.1",
   "repository": {
@@ -49,7 +49,7 @@
         "command": "vmxpi-wsr.openCommandPalette",
         "title": "Open W4Studica Command Palette",
         "category": "W4Studica",
-        "icon": "resources/VMX_WSR_128.png"
+        "icon": "resources/w4studica-icon.svg"
       }
     ],
     "menus": {

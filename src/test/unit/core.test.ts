@@ -5,8 +5,8 @@ import { createHash } from 'crypto';
 import { deflateRawSync } from 'zlib';
 import { Readable } from 'stream';
 import { Response } from 'node-fetch';
-import { configureBuild, configureProject, configureSettings, configureWrapper, detectTarget, ProjectState, readState } from '../../project';
-import { Candidate, findInstallation, Installation, installComponent, Manifest, validateManifest } from '../../releases';
+import { configureBuild, configureProject, configureSettings, detectTarget, ProjectState, projectStorageDir, readState } from '../../project';
+import { Candidate, candidateDownloadSize, findInstallation, Installation, installComponent, Manifest, validateManifest } from '../../releases';
 import { atomicWrite, exists, inside, io, writeTransaction } from '../../files';
 import { extractZip } from '../../archive';
 import { runGradle, saveOffline } from '../../offline';
@@ -82,8 +82,10 @@ suite('Project conversion', () => {
         assert.ok(converted.includes('// systemcoreDebug and wpi.platforms.systemcore'));
         assert.ok(converted.includes('"wpi.platforms.systemcore { }"'));
         assert.ok(converted.indexOf('username =') < converted.indexOf('team ='));
-        assert.ok(converted.includes("System.getenv('VMX_PASSWORD')"));
-        assert.ok(converted.includes('apply from:'));
+        assert.ok(converted.includes("System.getenv('VMX_PASSWORD') ?: 'password'"));
+        assert.ok(converted.includes("apply from: new File(System.getProperty('user.home'), 'wpilib/2027/W4Studica/w4studica.gradle')"));
+        assert.ok(!converted.includes('exclusiveContent'));
+        assert.ok(!converted.includes('w4studicaBundleRoot'));
     });
     test('SystemCore return restores custom hostname and keeps edits made while on VMX', () => {
         const vmx = configureBuild(systemcore, installation, 'vmx') + '\ndef customUserSetting = 42\n';
@@ -92,7 +94,7 @@ suite('Project conversion', () => {
         assert.ok(restored.includes("useCustomSystemcoreHostName('robot.local')"));
         assert.ok(restored.includes('customUserSetting = 42'));
         assert.ok(!restored.includes('VMX_PASSWORD'));
-        assert.ok(!restored.includes('apply from:'));
+        assert.ok(restored.includes("apply from: new File(System.getProperty('user.home'), 'wpilib/2027/W4Studica/w4studica.gradle')"));
         assert.ok(!restored.includes('wpi.platforms.linuxarm64'));
     });
     test('Java JNI configurations switch in both directions', () => {
@@ -107,21 +109,21 @@ suite('Project conversion', () => {
         const first = text;
         for (let i = 0; i < 3; i++) { text = configureBuild(text, installation, 'vmx'); }
         assert.strictEqual(text, first);
-        for (const name of ['libraries', 'runtime', 'connection']) { assert.strictEqual(text.split('// BEGIN W4Studica ' + name).length, 2); }
+        assert.strictEqual(text.split('// BEGIN W4Studica connection').length, 2);
+        assert.strictEqual(text.split("wpilib/2027/W4Studica/w4studica.gradle").length, 2);
     });
     test('CRLF saves preserve target round trips and replace managed settings', () => {
         const crlf = (text: string) => text.replace(/\r?\n/g, '\r\n');
         const vmx = crlf(configureBuild(systemcore, installation, 'vmx'));
         const updated = configureBuild(vmx, installation, 'vmx');
-        for (const name of ['libraries', 'runtime', 'connection']) {
-            assert.strictEqual(updated.split('// BEGIN W4Studica ' + name).length, 2);
-        }
+        assert.strictEqual(updated.split('// BEGIN W4Studica connection').length, 2);
+        assert.strictEqual(updated.split("wpilib/2027/W4Studica/w4studica.gradle").length, 2);
         const restored = configureBuild(crlf(updated), installation, 'systemcore');
         assert.strictEqual(detectTarget(restored), 'systemcore');
         assert.ok(!restored.includes('VMX_PASSWORD'));
-        assert.ok(!restored.includes('apply from:'));
+        assert.ok(restored.includes("apply from: new File(System.getProperty('user.home'), 'wpilib/2027/W4Studica/w4studica.gradle')"));
         assert.ok(restored.includes("useCustomSystemcoreHostName('robot.local')"));
-        assert.strictEqual(restored.split('// BEGIN W4Studica libraries').length, 2);
+        assert.ok(!restored.includes('// BEGIN W4Studica libraries'));
         const settings = crlf(configureSettings("rootProject.name = 'Robot'\r\n", installation));
         assert.strictEqual(configureSettings(settings, installation).split('BEGIN W4Studica plugin repositories').length, 2);
     });
@@ -139,14 +141,11 @@ suite('Project conversion', () => {
         const missing = { ...installation, allwpilib: { ...installation.allwpilib, manifest: { ...installation.allwpilib.manifest, vmxScript: undefined } } };
         assert.throws(() => configureBuild(systemcore, missing, 'vmx'), /vmxScript/);
     });
-    test('wrapper modification is idempotent, supports Windows and spaces', () => {
-        const shell = '#!/bin/sh\nexec "$JAVACMD" "$@"\n';
-        const modified = configureWrapper(shell, false);
-        assert.strictEqual(configureWrapper(modified, false), modified);
-        assert.ok(modified.includes('"$APP_HOME/.w4studica/gradle-home"'));
-        const windows = '"%JAVA_EXE%" -jar "%APP_HOME%\\gradle\\wrapper\\gradle-wrapper.jar" %*\r\n';
-        assert.ok(configureWrapper(windows, true).includes('%* --gradle-user-home "%APP_HOME%\\.w4studica\\gradle-home"'));
-        assert.throws(() => configureWrapper('unknown launcher', false), /Unsupported/);
+    test('restores wrappers edited by the earlier project-local cache implementation', () => {
+        const shell = '#!/bin/sh\n# W4Studica Gradle home\nset -- "$@" --gradle-user-home "$APP_HOME/.w4studica/gradle-home"\nexec "$JAVACMD" "$@"\n';
+        assert.strictEqual(require('../../project').restoreWrapper(shell, false), '#!/bin/sh\nexec "$JAVACMD" "$@"\n');
+        const windows = '@rem W4Studica Gradle home\r\n"%JAVA_EXE%" -jar "%APP_HOME%\\gradle\\wrapper\\gradle-wrapper.jar" %* --gradle-user-home "%APP_HOME%\\.w4studica\\gradle-home"\r\n';
+        assert.ok(!require('../../project').restoreWrapper(windows, true).includes('.w4studica'));
     });
 });
 
@@ -205,12 +204,16 @@ suite('Release and archive validation', () => {
         const implementation = 'maven/org/wpilib/GradleRIO/' + manifest.version + '/GradleRIO-' + manifest.version;
         const archive = zip([{ name: pom, content: '<project/>' }, { name: implementation + '.pom', content: '<project/>' }, { name: implementation + '.jar', content: 'fixture' }]);
         const candidate: Candidate = { ...installed('gradlerio'), manifest: { ...manifest, sha256: createHash('sha256').update(archive).digest('hex') },
-            release: { ...installed('gradlerio').release, assets: [{ name: 'bundle.zip', browser_download_url: 'https://github.com/W4Studica/GradleRIO/releases/download/v2/bundle.zip' }] } };
+            release: { ...installed('gradlerio').release, assets: [{ name: 'bundle.zip', size: archive.length, browser_download_url: 'https://github.com/W4Studica/GradleRIO/releases/download/v2/bundle.zip' }] } };
+        assert.strictEqual(candidateDownloadSize(candidate), archive.length);
         let calls = 0;
+        const updates: { transferred: number; total: number; cached?: boolean }[] = [];
         const download = async () => { calls++; return new Response(Readable.from([archive])); };
-        const result = await installComponent(candidate, temp, () => undefined, download);
+        const result = await installComponent(candidate, temp, () => undefined, download, update => updates.push(update));
         assert.ok(await exists(path.join(result.directory, '.complete')));
-        await installComponent(candidate, temp, () => undefined, download);
+        assert.ok(updates.some(update => update.total === archive.length && update.transferred === archive.length));
+        await installComponent(candidate, temp, () => undefined, download, update => updates.push(update));
+        assert.ok(updates.some(update => update.cached));
         assert.strictEqual(calls, 1);
         await assert.rejects(installComponent({ ...candidate, manifest: { ...manifest, sha256: 'b'.repeat(64) } }, temp, () => undefined, download), /SHA-256/);
     });
@@ -243,27 +246,36 @@ suite('Release and archive validation', () => {
 
 suite('Offline and atomic project operations', () => {
     let temp: string;
+    let w4Home: string;
     setup(async () => { temp = await io.mkdtemp(path.join(os.tmpdir(), 'w4studica project ')); });
-    teardown(async () => { await io.rm(temp, { recursive: true }); });
+    setup(async () => { w4Home = await io.mkdtemp(path.join(os.tmpdir(), 'w4studica home ')); });
+    teardown(async () => { await io.rm(temp, { recursive: true }); await io.rm(w4Home, { recursive: true }); });
     test('writes project state and backup, invalidates offline on switch, leaves source files intact', async () => {
+        await io.mkdir(installation.allwpilib.directory, { recursive: true });
+        await io.writeFile(path.join(installation.allwpilib.directory, 'vmx.gradle'), "def sdkCache = file('.w4studica/vmx-sdk')\n");
+        await atomicWrite(path.join(temp, '.w4studica/gradle-home/caches/modules-2/test-cache'), 'cached dependency');
         await io.writeFile(path.join(temp, 'build.gradle'), systemcore);
         await io.writeFile(path.join(temp, 'gradlew'), '#!/bin/sh\nexec "$JAVACMD" "$@"\n', { mode: 0o755 });
         await atomicWrite(path.join(temp, 'src/main/cpp/main.cpp'), '// user robot');
-        await configureProject(temp, installation, 'vmx');
+        await configureProject(temp, installation, 'vmx', w4Home, path.join(w4Home, 'gradle-home'));
         assert.strictEqual((await io.stat(path.join(temp, 'gradlew'))).mode & 0o777, 0o755);
-        assert.strictEqual((await readState(temp))!.target, 'vmx');
-        assert.strictEqual(await io.readFile(path.join(temp, '.w4studica/backup/build.gradle'), 'utf8'), systemcore);
-        await atomicWrite(path.join(temp, '.w4studica/offline'), '{}');
-        await configureProject(temp, installation, 'systemcore');
-        assert.ok(!await exists(path.join(temp, '.w4studica/offline')));
+        const state = (await readState(temp, w4Home))!;
+        assert.strictEqual(state.target, 'vmx');
+        assert.strictEqual(await io.readFile(path.join(state.projectStorageDir, 'backup/build.gradle'), 'utf8'), systemcore);
+        assert.ok((await io.readFile(path.join(state.projectStorageDir, 'vmx.gradle'), 'utf8')).includes("new File(w4studicaProjectStorage, 'vmx-sdk')"));
+        assert.strictEqual(await io.readFile(path.join(w4Home, 'gradle-home/caches/modules-2/test-cache'), 'utf8'), 'cached dependency');
+        assert.ok(!await exists(path.join(temp, '.w4studica')));
+        await atomicWrite(path.join(state.projectStorageDir, 'offline'), '{}');
+        await configureProject(temp, installation, 'systemcore', w4Home, path.join(w4Home, 'gradle-home'));
+        assert.ok(!await exists(path.join(state.projectStorageDir, 'offline')));
         assert.strictEqual(await io.readFile(path.join(temp, 'src/main/cpp/main.cpp'), 'utf8'), '// user robot');
     });
     test('failed preparation never changes build.gradle', async () => {
         await io.writeFile(path.join(temp, 'build.gradle'), systemcore);
         await io.writeFile(path.join(temp, 'settings.gradle'), "includeBuild('../GradleRIO')");
-        await assert.rejects(configureProject(temp, installation, 'vmx'), /includeBuild/);
+        await assert.rejects(configureProject(temp, installation, 'vmx', w4Home, path.join(w4Home, 'gradle-home')), /includeBuild/);
         assert.strictEqual(await io.readFile(path.join(temp, 'build.gradle'), 'utf8'), systemcore);
-        assert.ok(!await exists(path.join(temp, '.w4studica/config.json')));
+        assert.ok(!await exists(path.join(projectStorageDir(temp, w4Home), 'config.json')));
     });
     test('transaction restores an earlier write if a later parent is unwritable', async () => {
         const good = path.join(temp, 'good');
@@ -274,15 +286,15 @@ suite('Offline and atomic project operations', () => {
         assert.strictEqual(await io.readFile(good, 'utf8'), 'before');
     });
     test('marks offline ready only after successful online resolution, build and forced offline build', async () => {
-        const state: ProjectState = { schemaVersion: 1, target: 'vmx', installation };
+        const state: ProjectState = { schemaVersion: 2, target: 'vmx', installation, projectStorageDir: projectStorageDir(temp, w4Home) };
         const calls: { args: string[]; online: boolean }[] = [];
         await saveOffline(temp, state, () => undefined, async (_root, args, online) => { calls.push({ args, online }); });
         assert.strictEqual(calls.length, 3);
         assert.deepStrictEqual(calls.map(c => c.online), [true, true, false]);
         assert.ok(calls[2].args.includes('--offline') && calls[2].args.includes('--rerun-tasks'));
-        assert.ok(await exists(path.join(temp, '.w4studica/offline')));
+        assert.ok(await exists(path.join(state.projectStorageDir, 'offline')));
         await assert.rejects(saveOffline(temp, state, () => undefined, async () => { throw new Error('Missing dependency'); }), /Missing dependency/);
-        assert.ok(!await exists(path.join(temp, '.w4studica/offline')));
+        assert.ok(!await exists(path.join(state.projectStorageDir, 'offline')));
     });
     test('runs Unix wrapper in a path with spaces and reports build failure', async function () {
         if (process.platform === 'win32') { this.skip(); }

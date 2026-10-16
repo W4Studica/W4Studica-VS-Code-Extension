@@ -33,9 +33,9 @@ export async function runGradle(root: string, args: string[], online: boolean, l
 
 export async function saveOffline(root: string, state: ProjectState, log: (text: string) => void,
     run: typeof runGradle = runGradle): Promise<void> {
-    const marker = path.join(root, '.w4studica/offline');
+    const marker = path.join(state.projectStorageDir, 'offline');
     await io.unlink(marker).catch(error => { if (error.code !== 'ENOENT') { throw error; } });
-    const script = path.join(root, '.w4studica/resolve-offline.gradle');
+    const script = path.join(state.projectStorageDir, 'resolve-offline.gradle');
     await atomicWrite(script, resolveScript);
     const buildFile = path.join(root, 'build.gradle');
     if (await exists(buildFile)) {
@@ -50,7 +50,7 @@ export async function saveOffline(root: string, state: ProjectState, log: (text:
             }
         }
     }
-    await run(root, ['--no-daemon', '-I', '.w4studica/resolve-offline.gradle', 'w4studicaResolveOffline'], true, log);
+    await run(root, ['--no-daemon', '-I', script, 'w4studicaResolveOffline'], true, log);
     await run(root, ['--no-daemon', 'build'], true, log);
     await run(root, ['--no-daemon', '--offline', '--rerun-tasks', 'build'], false, log);
     await atomicWrite(marker, JSON.stringify({ savedAt: new Date().toISOString(), target: state.target,

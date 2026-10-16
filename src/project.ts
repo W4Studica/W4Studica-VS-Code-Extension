@@ -1,10 +1,12 @@
 import * as path from 'path';
+import { createHash } from 'crypto';
+import * as os from 'os';
 import { pathToFileURL } from 'url';
 import { Installation } from './releases';
 import { exists, inside, io, writeTransaction } from './files';
 
 export type Target = 'vmx' | 'systemcore';
-export interface ProjectState { schemaVersion: 1; target: Target; installation: Installation; }
+export interface ProjectState { schemaVersion: 1 | 2; target: Target; installation: Installation; projectStorageDir: string; }
 const begin = '// BEGIN W4Studica ';
 const end = '// END W4Studica ';
 
@@ -62,13 +64,6 @@ function closeBrace(mask: string, open: number): number {
     throw new Error('Unbalanced Gradle braces');
 }
 
-function pluginEnd(text: string): number {
-    const mask = codeMask(text);
-    const match = /\bplugins\s*\{/.exec(mask);
-    if (!match) { throw new Error('Expected a plugins block in build.gradle.'); }
-    return closeBrace(mask, match.index + match[0].lastIndexOf('{')) + 1;
-}
-
 export function detectTarget(text: string): Target {
     const mask = codeMask(text);
     const found: Target[] = [];
@@ -98,7 +93,7 @@ function convertTarget(text: string, target: Target): string {
         // Keep the original connection calls as inert, reversible comments (never store credentials).
         body = replaceCode(body, /\b(?:useDefaultSystemcoreHostName|useCustomSystemcoreHostName|setAddresses|addAddress)\s*\([^\n]*?\)\s*;?/g,
             (original: string) => '/* W4Studica original host: ' + Buffer.from(original).toString('base64') + ' */');
-        body = '\n' + block('connection', "username = System.getenv('VMX_USER') ?: 'ubuntu'\npassword = System.getenv('VMX_PASSWORD') ?: ''") + '\n' + body;
+        body = '\n' + block('connection', "username = System.getenv('VMX_USER') ?: 'ubuntu'\npassword = System.getenv('VMX_PASSWORD') ?: 'password'") + '\n' + body;
         text = text.slice(0, open + 1) + body + text.slice(close);
     } else {
         text = removeBlock(text, 'connection');
@@ -126,26 +121,13 @@ export function configureBuild(original: string, installation: Installation, tar
     text = replaceCode(text, originalPlugin, () => { pluginCount++; return 'id "org.wpilib.GradleRIO" version "' + installation.gradlerio.manifest.version + '"'; });
     if (pluginCount !== 1) { throw new Error('Expected org.wpilib.GradleRIO in a WPILib 2027 project. Legacy 2020 projects must be migrated first.'); }
     text = convertTarget(text, target);
-    const position = pluginEnd(text);
-    const repository = pathToFileURL(inside(installation.allwpilib.directory, installation.allwpilib.manifest.mavenPath)).href;
-    const libraries = block('libraries', `
-wpi.versions.wpilibVersion.set('${installation.allwpilib.manifest.wpilibVersion}')
-repositories {
-    exclusiveContent {
-        forRepository { maven { url = uri('${repository}') } }
-        filter { includeVersionByRegex('org[.]wpilib([.].*)?', '.*', java.util.regex.Pattern.quote('${installation.allwpilib.manifest.wpilibVersion}')) }
-    }
-}
-`);
-    text = text.slice(0, position) + '\n' + libraries + '\n' + text.slice(position);
-    if (target === 'vmx') {
-        const script = installation.allwpilib.manifest.vmxScript;
-        if (!script) { throw new Error('The allwpilib release has no prebuilt VMX integration script (vmxScript).'); }
-        const scriptPath = inside(installation.allwpilib.directory, script).replace(/\\/g, '/').replace(/'/g, "\\'");
-        const bundlePath = installation.allwpilib.directory.replace(/\\/g, '/').replace(/'/g, "\\'");
-        text += '\n' + block('runtime', `ext.w4studicaBundleRoot = file('${bundlePath}')\napply from: '${scriptPath}'`) + '\n';
-    }
-    return text;
+    if (target === 'vmx' && !installation.allwpilib.manifest.vmxScript) { throw new Error('The allwpilib release has no prebuilt VMX integration script (vmxScript).'); }
+    // One short project hook loads the versioned repositories, VMX support, and per-project state
+    // from the WPILib 2027 user installation. No absolute machine paths or caches go in the project.
+    const applyLine = "apply from: new File(System.getProperty('user.home'), 'wpilib/2027/W4Studica/w4studica.gradle')";
+    text = text.replace(/\r?\n[ \t]*apply from: new File\(System\.getProperty\('user\.home'\), 'wpilib\/2027\/W4Studica\/w4studica\.gradle'\)[ \t]*\r?\n?/g, '');
+    const newline = text.includes('\r\n') ? '\r\n' : '\n';
+    return text.replace(/[ \t\r\n]*$/, '') + newline + applyLine + newline;
 }
 
 export function configureSettings(original: string, installation: Installation): string {
@@ -173,37 +155,69 @@ ${repos.map(url => "    maven { url = uri('" + url + "') }").join('\n')}
     return text;
 }
 
-export function configureWrapper(text: string, windows: boolean): string {
-    if (text.includes('W4Studica Gradle home')) { return text; }
+export function restoreWrapper(text: string, windows: boolean): string {
     if (windows) {
-        const line = /^.*"%JAVA_EXE%".*(?:GradleWrapperMain|gradle-wrapper\.jar).*%\*.*$/m.exec(text);
-        if (!line) { throw new Error('Unsupported gradlew.bat launcher'); }
-        return text.replace(line[0], '@rem W4Studica Gradle home\r\n' + line[0].replace('%*', '%* --gradle-user-home "%APP_HOME%\\.w4studica\\gradle-home"'));
+        return text.replace(/^@rem W4Studica Gradle home\r?\n/m, '').replace(/ --gradle-user-home "%APP_HOME%\\.w4studica\\gradle-home"/g, '');
     }
-    const launcher = /^exec "\$JAVACMD" "\$@"\s*$/m;
-    if (!launcher.test(text)) { throw new Error('Unsupported gradlew launcher'); }
-    return text.replace(launcher, '# W4Studica Gradle home\nset -- "$@" --gradle-user-home "$APP_HOME/.w4studica/gradle-home"\nexec "$JAVACMD" "$@"\n');
+    return text.replace(/^# W4Studica Gradle home\r?\nset -- "\$@" --gradle-user-home "\$APP_HOME\/\.w4studica\/gradle-home"\r?\n/m, '');
 }
 
-export const cacheSettings = `// Managed by W4Studica. Project dependencies stay on this computer.
-beforeSettings { settings ->
-    settings.caches { cleanup = org.gradle.api.cache.Cleanup.DISABLED }
+export function projectStorageDir(root: string, w4Home = path.join(os.homedir(), 'wpilib', '2027', 'W4Studica')): string {
+    const key = createHash('sha256').update(path.resolve(root).replace(/\\/g, '/')).digest('hex');
+    return path.join(w4Home, 'projects', key);
 }
-def projectRoot = gradle.gradleUserHomeDir.parentFile.parentFile
-if (new File(projectRoot, '.w4studica/offline').isFile() && System.getenv('W4STUDICA_ONLINE') != '1') {
-    gradle.startParameter.offline = true
+
+export const globalGradleScript = `import groovy.json.JsonSlurper
+import java.security.MessageDigest
+def w4Home = new File(System.getProperty('user.home'), 'wpilib/2027/W4Studica')
+def projectPath = project.rootDir.canonicalPath.replace('\\\\', '/')
+def projectKey = MessageDigest.getInstance('SHA-256').digest(projectPath.getBytes('UTF-8')).encodeHex().toString()
+def w4Project = new File(w4Home, 'projects/' + projectKey)
+def stateFile = new File(w4Project, 'config.json')
+if (!stateFile.isFile()) throw new GradleException('W4Studica project settings are missing. Reconnect the project with the W4Studica extension.')
+def state = new JsonSlurper().parse(stateFile)
+def allwpilib = state.installation.allwpilib
+def wpilibVersion = allwpilib.manifest.wpilibVersion
+wpi.versions.wpilibVersion.set(wpilibVersion)
+repositories {
+    exclusiveContent {
+        forRepository { maven { url = new File(allwpilib.directory, allwpilib.manifest.mavenPath).toURI() } }
+        filter { includeVersionByRegex('org[.]wpilib([.].*)?', '.*', java.util.regex.Pattern.quote(wpilibVersion)) }
+    }
 }
+ext.w4studicaBundleRoot = file(allwpilib.directory)
+ext.w4studicaProjectStorage = w4Project
+if (state.target == 'vmx') apply from: new File(w4Project, 'vmx.gradle')
+if (new File(w4Project, 'offline').isFile() && System.getenv('W4STUDICA_ONLINE') != '1') gradle.startParameter.offline = true
 `;
 
-export async function readState(root: string): Promise<ProjectState | undefined> {
-    const file = path.join(root, '.w4studica/config.json');
-    if (!await exists(file)) { return undefined; }
+export async function readState(root: string, w4Home = path.join(os.homedir(), 'wpilib', '2027', 'W4Studica')): Promise<ProjectState | undefined> {
+    const directory = projectStorageDir(root, w4Home);
+    const file = path.join(directory, 'config.json');
+    if (!await exists(file)) {
+        // Allow a project configured by the previous extension build to be upgraded in place.
+        const legacy = path.join(root, '.w4studica/config.json');
+        if (!await exists(legacy)) { return undefined; }
+        const state = JSON.parse(await io.readFile(legacy, 'utf8')) as { target: Target; installation: Installation };
+        return { schemaVersion: 1, target: state.target, installation: state.installation, projectStorageDir: directory };
+    }
     const state = JSON.parse(await io.readFile(file, 'utf8')) as ProjectState;
-    if (state.schemaVersion !== 1 || !state.installation || !['vmx', 'systemcore'].includes(state.target)) { throw new Error('Invalid W4Studica project state'); }
+    if (state.schemaVersion !== 2 || !state.installation || !['vmx', 'systemcore'].includes(state.target)) { throw new Error('Invalid W4Studica project state'); }
     return state;
 }
 
-export async function configureProject(root: string, installation: Installation, target: Target): Promise<void> {
+async function copyDirectory(source: string, destination: string): Promise<void> {
+    if (!await exists(source)) { return; }
+    await io.mkdir(destination, { recursive: true });
+    for (const entry of await io.readdir(source, { withFileTypes: true })) {
+        const from = path.join(source, entry.name); const to = path.join(destination, entry.name);
+        if (entry.isDirectory()) { await copyDirectory(from, to); }
+        else if (!await exists(to)) { await io.copyFile(from, to); }
+    }
+}
+
+export async function configureProject(root: string, installation: Installation, target: Target,
+    w4Home = path.join(os.homedir(), 'wpilib', '2027', 'W4Studica'), gradleHome = path.join(os.homedir(), '.gradle')): Promise<void> {
     if (await exists(path.join(root, 'build.gradle.kts')) || await exists(path.join(root, 'settings.gradle.kts'))) { throw new Error('Only Groovy build.gradle/settings.gradle projects are supported.'); }
     const changes = new Map<string, string>();
     const buildFile = path.join(root, 'build.gradle');
@@ -214,22 +228,36 @@ export async function configureProject(root: string, installation: Installation,
     changes.set(settingsFile, configureSettings(originalSettings, installation));
     for (const [name, windows] of [['gradlew', false], ['gradlew.bat', true]] as [string, boolean][]) {
         const file = path.join(root, name);
-        if (await exists(file)) { changes.set(file, configureWrapper(await io.readFile(file, 'utf8'), windows)); }
+        if (await exists(file)) { changes.set(file, restoreWrapper(await io.readFile(file, 'utf8'), windows)); }
     }
+    const dataDir = projectStorageDir(root, w4Home);
+    const legacyDir = path.join(root, '.w4studica');
+    await io.mkdir(dataDir, { recursive: true });
+    await copyDirectory(path.join(legacyDir, 'backup'), path.join(dataDir, 'backup'));
+    await copyDirectory(path.join(legacyDir, 'vmx-sdk'), path.join(dataDir, 'vmx-sdk'));
+    await copyDirectory(path.join(legacyDir, 'gradle-home', 'caches'), path.join(gradleHome, 'caches'));
+    await copyDirectory(path.join(legacyDir, 'gradle-home', 'wrapper'), path.join(gradleHome, 'wrapper'));
     const ignoreFile = path.join(root, '.gitignore');
     const ignore = await exists(ignoreFile) ? await io.readFile(ignoreFile, 'utf8') : '';
-    if (!/^\/\.w4studica\/$/m.test(ignore)) { changes.set(ignoreFile, ignore + '\n/.w4studica/\n'); }
-    const state: ProjectState = { schemaVersion: 1, target, installation };
-    changes.set(path.join(root, '.w4studica/config.json'), JSON.stringify(state, null, 2) + '\n');
-    changes.set(path.join(root, '.w4studica/gradle-home/init.d/w4studica.gradle'), cacheSettings);
+    const cleanIgnore = ignore.replace(/^\/?\.w4studica\/?\s*\r?\n/gm, '').replace(/\n{3,}/g, '\n\n');
+    if (cleanIgnore !== ignore) { changes.set(ignoreFile, cleanIgnore); }
+    const state: ProjectState = { schemaVersion: 2, target, installation, projectStorageDir: dataDir };
+    changes.set(path.join(dataDir, 'config.json'), JSON.stringify(state, null, 2) + '\n');
+    changes.set(path.join(w4Home, 'w4studica.gradle'), globalGradleScript);
+    if (target === 'vmx' && installation.allwpilib.manifest.vmxScript) {
+        const vmxScript = await io.readFile(inside(installation.allwpilib.directory, installation.allwpilib.manifest.vmxScript), 'utf8');
+        const migratedScript = vmxScript.replace(/file\(['"]\.w4studica\/vmx-sdk['"]\)/g, "new File(w4studicaProjectStorage, 'vmx-sdk')");
+        changes.set(path.join(dataDir, 'vmx.gradle'), migratedScript);
+    }
     // One initial backup, for manual recovery; later target switches preserve user edits.
     for (const [name, contents] of [['build.gradle', originalBuild], ['settings.gradle', originalSettings]]) {
-        const backup = path.join(root, '.w4studica/backup', name);
+        const backup = path.join(dataDir, 'backup', name);
         if (!await exists(backup)) { changes.set(backup, contents); }
     }
     // Invalidate offline readiness before changing dependencies or target.
-    const offline = path.join(root, '.w4studica/offline');
+    const offline = path.join(dataDir, 'offline');
     if (await exists(offline)) { changes.set(offline, ''); }
     await writeTransaction(changes);
     if (changes.has(offline)) { await io.unlink(offline); }
+    if (await exists(legacyDir)) { await io.rm(legacyDir, { recursive: true, force: true }); }
 }

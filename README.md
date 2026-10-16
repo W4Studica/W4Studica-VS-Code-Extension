@@ -19,7 +19,7 @@ The old `Update WPILib Version` and `Verify the Project's build.gradle file` com
 
 1. Open a WPILib **2027 Groovy project**. You need a JDK and an Internet connection to access GitHub.
 2. Run `Update W4Studica Version` or switch to the VMX target. The matching binaries must already be published in both repositories using the [release format](RELEASES.md).
-3. For VMX, install Robot-Manager and the VMX HAL on the robot. Pass `VMX_USER` and `VMX_PASSWORD` to the VS Code process as environment variables for deployment. The default username is `ubuntu`; the extension never writes the password to a file.
+3. For VMX, install Robot-Manager and the VMX HAL on the robot. The VMX connection fallback credentials are always username `ubuntu` and password `password`.
 4. While online, run `Save W4Studica Offline`. C++ VMX projects must initially fetch the SDK from the robot, so the robot must also be reachable.
 5. Once setup is complete, use `./gradlew build`, `./gradlew deploy`, or the existing WPILib extension's wrapper-based commands. On Windows, use `gradlew.bat`.
 
@@ -29,15 +29,15 @@ Configure VMX channel mappings and Driver Station enable/disable logic in the ro
 
 The default GitHub repositories are `W4Studica/GradleRIO` and `W4Studica/allwpilib`. Change them with the `w4studica.gradleRIORepository` and `w4studica.allwpilibRepository` settings. `w4studica.includePrereleases` defaults to `true`.
 
-The extension searches the 30 most recent releases in each repository and selects a pair with matching `wpilibVersion` values. Turn off the prerelease setting to use stable releases only. The release tags do not have to match. After verifying their SHA-256 checksums, the extension stores the ZIPs in VS Code's global W4Studica storage. If download or verification fails, the existing Gradle configuration is left unchanged. Target switching reuses the already installed release pair and does not require GitHub access.
+The extension searches the 30 most recent releases in each repository and selects a pair with matching `wpilibVersion` values. Turn off the prerelease setting to use stable releases only. The release tags do not have to match. After verifying their SHA-256 checksums, the extension stores the ZIPs under `~/wpilib/2027/W4Studica/`. Downloads show percent complete and an estimated remaining time. If download or verification fails, the existing Gradle configuration is left unchanged. Target switching reuses the already installed release pair and does not require GitHub access.
 
-The project `settings.gradle` is configured to use the local plugin repository, and `build.gradle` is configured with the pinned versions and library repositories. The extension preserves existing source files, target names, and desktop simulation settings while updating only its managed blocks. It backs up the original Gradle files under `.w4studica/backup/`. Git ignores `.w4studica/`; it contains absolute paths and caches specific to this computer. On another computer, install the releases again with the extension.
+The extension configures the local GradleRIO plugin repository in `settings.gradle`. In `build.gradle`, it only updates the GradleRIO version, the deploy target, the fixed VMX credentials, and one short W4Studica script line. Release files, project settings, SDK cache, offline status, and backups are kept under `~/wpilib/2027/W4Studica/`, outside robot projects. No W4Studica folders or Gradle caches are created in the project. Existing `.w4studica` data from earlier extension versions is moved to the global location the next time the project is reconnected.
 
 Automatic migration of 2020 RoboRIO projects, Kotlin DSL, and projects with multiple deploy targets are not supported. If `settings.gradle` contains an `includeBuild` for a source build, disable it before connecting a binary release.
 
 ## Offline storage
 
-Dependencies are stored in `.w4studica/gradle-home/`. The extension points Unix and Windows wrappers to this directory and disables Gradle's automatic cleanup of this dedicated cache. The VMX SDK is cached in `.w4studica/vmx-sdk/` and restored to GradleRIO's build SDK path after `clean`. C++ toolchains use the installation location managed by GradleRIO on the development computer.
+Gradle uses its normal per-user dependency cache. The VMX SDK is cached under the WPILib 2027 W4Studica project data directory and restored to GradleRIO's build SDK path after `clean`. C++ toolchains use the installation location managed by GradleRIO on the development computer.
 
 The save command performs these steps in order:
 
@@ -45,7 +45,7 @@ The save command performs these steps in order:
 2. Download every resolvable dependency configuration in the project. Missing configurations cause the operation to fail.
 3. Run an online `build`.
 4. Verify a real rebuild with `--offline --rerun-tasks build`.
-5. If all steps succeed, write the `.w4studica/offline` completion marker and configure later Gradle wrapper runs to use offline mode.
+5. If all steps succeed, write the global offline completion marker. The W4Studica Gradle script enables offline mode on later project builds.
 
 Changing the version or target clears the offline completion state. If you add dependencies or vendor libraries, reconnect to the Internet and run `Save W4Studica Offline` again. A failed save is never marked complete. These settings do not apply when you invoke a separate Gradle installation directly instead of the wrapper. Gradle offline mode prevents dependency lookups in repositories, but it does not block arbitrary network requests made by user tasks. Deploying to the robot still requires a local network connection.
 

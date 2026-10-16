@@ -32,7 +32,7 @@ vmxTarget.artifacts.all { artifact ->
 if (plugins.hasPlugin('cpp')) {
     // Proprietary/image-specific VMX HAL headers and library still come from the user's robot.
     // They are never redistributed in the release bundle.
-    def sdkCache = file('.w4studica/vmx-sdk')
+    def sdkCache = new File(w4studicaProjectStorage, 'vmx-sdk')
     // Keep GradleRIO's sdkPath() contract. Restore its build-directory copy from
     // the persistent cache before compiling, so `clean build` needs no robot.
     def sdkHeaders = vmxTarget.sdkPath('/usr/local/include/vmxpi')

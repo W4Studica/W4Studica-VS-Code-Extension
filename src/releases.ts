@@ -20,7 +20,7 @@ export interface Manifest {
     mavenPath: string;
     vmxScript?: string;
 }
-export interface ReleaseAsset { name: string; browser_download_url: string; }
+export interface ReleaseAsset { name: string; browser_download_url: string; size?: number; }
 export interface Release { tag_name: string; draft: boolean; prerelease: boolean; assets: ReleaseAsset[]; }
 export interface Candidate { repository: string; release: Release; manifest: Manifest; }
 export interface Installed extends Candidate { directory: string; }
@@ -100,32 +100,61 @@ export async function findInstallation(repositories: { gradlerio: string; allwpi
     throw new Error('No compatible prebuilt release pair found. Both repositories need w4studica.json assets with the same wpilibVersion.');
 }
 
+export interface InstallProgress { component: Component; archive: string; transferred: number; total: number; cached?: boolean; }
+
+export function candidateDownloadSize(candidate: Candidate): number {
+    const names = new Set([candidate.manifest.archive, ...(candidate.manifest.additionalArchives || []).map(part => part.archive)]);
+    return candidate.release.assets.reduce((sum, asset) => sum + (names.has(asset.name) ? (asset.size || 0) : 0), 0);
+}
+
 export async function installComponent(candidate: Candidate, storage: string, log: (message: string) => void,
-    download: (url: string) => Promise<import('node-fetch').Response> = url => fetch(url, { headers, timeout: 120000 })): Promise<Installed> {
+    download: (url: string) => Promise<import('node-fetch').Response> = url => fetch(url, { headers, timeout: 120000 }),
+    reportProgress?: (progress: InstallProgress) => void): Promise<Installed> {
     const { manifest, release } = candidate;
     const key = createHash('sha256').update(candidate.repository + '\n' + JSON.stringify(manifest)).digest('hex');
     const directory = path.join(storage, 'releases', key);
-    if (await exists(path.join(directory, '.complete'))) { return { ...candidate, directory }; }
     const parts = [{ archive: manifest.archive, sha256: manifest.sha256 }, ...(manifest.additionalArchives || [])];
     const assets = parts.map(part => {
         const asset = release.assets.find(a => a.name === part.archive);
         if (!asset) { throw new Error('Release asset not found: ' + part.archive); }
-        return { ...part, url: safeAssetUrl(asset.browser_download_url) };
+        return { ...part, url: safeAssetUrl(asset.browser_download_url), size: asset.size };
     });
+    const totalSize = assets.reduce((sum, asset) => sum + (asset.size || 0), 0);
+    if (await exists(path.join(directory, '.complete'))) {
+        if (reportProgress) { reportProgress({ component: manifest.component, archive: '', transferred: totalSize, total: totalSize, cached: true }); }
+        return { ...candidate, directory };
+    }
     await io.mkdir(path.dirname(directory), { recursive: true });
     const staging = directory + '.' + randomBytes(6).toString('hex');
     const archive = staging + '.zip';
     try {
         log('Downloading ' + candidate.repository + ' ' + release.tag_name);
         await io.mkdir(staging);
+        let completedBytes = 0;
         for (const asset of assets) {
             log('Archive: ' + asset.archive);
             const response = await download(asset.url);
             if (!response.ok) { throw new Error('Download failed: HTTP ' + response.status); }
+            const responseSize = Number(response.headers.get('content-length')) || 0;
+            const partSize = asset.size || responseSize;
+            const progressTotal = totalSize || partSize;
+            if (reportProgress) { reportProgress({ component: manifest.component, archive: asset.archive, transferred: completedBytes, total: progressTotal }); }
             const hash = createHash('sha256');
-            const hashing = new Transform({ transform(chunk: Buffer, _encoding, done) { hash.update(chunk); done(null, chunk); } });
+            let currentBytes = 0;
+            let lastProgress = 0;
+            const hashing = new Transform({ transform(chunk: Buffer, _encoding, done) {
+                hash.update(chunk); currentBytes += chunk.length;
+                const now = Date.now();
+                if (reportProgress && (now - lastProgress >= 150 || (partSize > 0 && currentBytes >= partSize))) {
+                    reportProgress({ component: manifest.component, archive: asset.archive, transferred: completedBytes + currentBytes, total: progressTotal });
+                    lastProgress = now;
+                }
+                done(null, chunk);
+            } });
             await pipe(response.body, hashing, fs.createWriteStream(archive, { flags: 'wx' }));
             if (hash.digest('hex') !== asset.sha256.toLowerCase()) { throw new Error('SHA-256 mismatch: ' + asset.archive); }
+            completedBytes += currentBytes;
+            if (reportProgress) { reportProgress({ component: manifest.component, archive: asset.archive, transferred: completedBytes, total: progressTotal }); }
             await extractZip(archive, staging);
             await io.unlink(archive);
         }
