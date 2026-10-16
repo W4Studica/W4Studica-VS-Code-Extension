@@ -3,7 +3,7 @@ import { createHash } from 'crypto';
 import * as os from 'os';
 import { pathToFileURL } from 'url';
 import { Installation } from './releases';
-import { exists, inside, io, writeTransaction } from './files';
+import { atomicWrite, exists, inside, io, writeTransaction } from './files';
 
 export type Target = 'vmx' | 'systemcore';
 export interface ProjectState { schemaVersion: 1 | 2; target: Target; installation: Installation; projectStorageDir: string; systemcoreHostCalls?: string[]; }
@@ -202,6 +202,19 @@ export function projectStorageDir(root: string, w4Home = path.join(os.homedir(),
     return path.join(w4Home, 'projects', key);
 }
 
+export function migrateVmxScript(script: string): string {
+    return script.replace(/dependsOn(\s+tasks\.named\(['"]fetchVmxSdk' \+ vmxTarget\.name\))/g, 'mustRunAfter$1');
+}
+
+export async function refreshVmxScript(root: string, installation: Installation,
+    w4Home = path.join(os.homedir(), 'wpilib', '2027', 'W4Studica')): Promise<void> {
+    const scriptPath = installation.allwpilib.manifest.vmxScript;
+    if (!scriptPath) { return; }
+    const script = migrateVmxScript(await io.readFile(inside(installation.allwpilib.directory, scriptPath), 'utf8'))
+        .replace(/file\(['"]\.w4studica\/vmx-sdk['"]\)/g, "new File(w4studicaProjectStorage, 'vmx-sdk')");
+    await atomicWrite(path.join(projectStorageDir(root, w4Home), 'vmx.gradle'), script);
+}
+
 export const globalGradleScript = `import groovy.json.JsonSlurper
 import java.security.MessageDigest
 def w4Home = new File(System.getProperty('user.home'), 'wpilib/2027/W4Studica')
@@ -287,7 +300,7 @@ export async function configureProject(root: string, installation: Installation,
     changes.set(path.join(w4Home, 'w4studica.gradle'), globalGradleScript);
     if (target === 'vmx' && installation.allwpilib.manifest.vmxScript) {
         const vmxScript = await io.readFile(inside(installation.allwpilib.directory, installation.allwpilib.manifest.vmxScript), 'utf8');
-        const migratedScript = vmxScript.replace(/file\(['"]\.w4studica\/vmx-sdk['"]\)/g, "new File(w4studicaProjectStorage, 'vmx-sdk')");
+        const migratedScript = migrateVmxScript(vmxScript).replace(/file\(['"]\.w4studica\/vmx-sdk['"]\)/g, "new File(w4studicaProjectStorage, 'vmx-sdk')");
         changes.set(path.join(dataDir, 'vmx.gradle'), migratedScript);
     }
     // One initial backup, for manual recovery; later target switches preserve user edits.

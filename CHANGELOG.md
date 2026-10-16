@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.0.3
+
+- Keep VMX SDK fetching out of ordinary `build` tasks; refresh existing projects to fetch the SDK only during deploy.
+- Update the saved VMX integration script when users run Update W4Studica Version, without rewriting their robot source build.gradle.
+
 ## 2.0.2
 
 - Keep VMX username and password defaults inside GradleRIO; remove stale generated settings from project build.gradle files.

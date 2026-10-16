@@ -5,7 +5,7 @@ import { createHash } from 'crypto';
 import { deflateRawSync } from 'zlib';
 import { Readable } from 'stream';
 import { Response } from 'node-fetch';
-import { configureBuild, configureProject, configureSettings, detectTarget, extractSystemcoreHostCalls, ProjectState, projectStorageDir, readState } from '../../project';
+import { configureBuild, configureProject, configureSettings, detectTarget, extractSystemcoreHostCalls, migrateVmxScript, ProjectState, projectStorageDir, readState, refreshVmxScript } from '../../project';
 import { Candidate, candidateDownloadSize, findInstallation, Installation, installComponent, Manifest, validateManifest } from '../../releases';
 import { atomicWrite, exists, inside, io, writeTransaction } from '../../files';
 import { extractZip } from '../../archive';
@@ -72,6 +72,14 @@ function zip(entries: { name: string; content: string; symlink?: boolean; declar
 }
 
 suite('Project conversion', () => {
+    test('VMX SDK fetch is an ordering constraint, not a build dependency', () => {
+        const script = `tasks.withType(CompileTask).configureEach {\n  dependsOn tasks.named('fetchVmxSdk' + vmxTarget.name)\n}\n` +
+            `tasks.withType(LinkTask).configureEach {\n  dependsOn tasks.named('fetchVmxSdk' + vmxTarget.name)\n}\n`;
+        const migrated = migrateVmxScript(script);
+        assert.strictEqual((migrated.match(/mustRunAfter tasks\.named/g) || []).length, 2);
+        assert.ok(!migrated.includes('dependsOn tasks.named'));
+    });
+
     test('VMX conversion preserves robot sources, target references, comments and desktop simulation', () => {
         const converted = configureBuild(systemcore, installation, 'vmx');
         assert.strictEqual(detectTarget(converted), 'vmx');
@@ -261,6 +269,22 @@ suite('Offline and atomic project operations', () => {
     setup(async () => { temp = await io.mkdtemp(path.join(os.tmpdir(), 'w4studica project ')); });
     setup(async () => { w4Home = await io.mkdtemp(path.join(os.tmpdir(), 'w4studica home ')); });
     teardown(async () => { await io.rm(temp, { recursive: true }); await io.rm(w4Home, { recursive: true }); });
+    test('refreshes VMX integration without rewriting robot build files', async () => {
+        const release = path.join(temp, 'release');
+        await io.mkdir(release);
+        await io.writeFile(path.join(release, 'vmx.gradle'), `def sdkCache = file('.w4studica/vmx-sdk')\n` +
+            `tasks.withType(CompileTask).configureEach { dependsOn tasks.named('fetchVmxSdk' + vmxTarget.name) }\n` +
+            `tasks.withType(LinkTask).configureEach { dependsOn tasks.named('fetchVmxSdk' + vmxTarget.name) }\n`);
+        const localInstallation = { ...installation, allwpilib: { ...installation.allwpilib, directory: release } };
+        const buildFile = path.join(temp, 'build.gradle');
+        await io.writeFile(buildFile, systemcore);
+        await refreshVmxScript(temp, localInstallation, w4Home);
+        const refreshed = await io.readFile(path.join(projectStorageDir(temp, w4Home), 'vmx.gradle'), 'utf8');
+        assert.ok(refreshed.includes("new File(w4studicaProjectStorage, 'vmx-sdk')"));
+        assert.strictEqual((refreshed.match(/mustRunAfter tasks\.named/g) || []).length, 2);
+        assert.ok(!refreshed.includes('dependsOn tasks.named'));
+        assert.strictEqual(await io.readFile(buildFile, 'utf8'), systemcore);
+    });
     test('writes project state and backup, invalidates offline on switch, leaves source files intact', async () => {
         await io.mkdir(installation.allwpilib.directory, { recursive: true });
         await io.writeFile(path.join(installation.allwpilib.directory, 'vmx.gradle'), "def sdkCache = file('.w4studica/vmx-sdk')\n");

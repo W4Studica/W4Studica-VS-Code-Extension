@@ -55,11 +55,13 @@ if (plugins.hasPlugin('cpp')) {
         }
         doLast { project.copy { from(sdkOutput.get().asFile); into(sdkCache) } }
     }
+    // Deploy wires the SDK fetch into the target's deploy graph. Ordering is only
+    // relevant when deploy selected both tasks; plain build must stay offline.
     tasks.withType(org.gradle.language.nativeplatform.tasks.AbstractNativeCompileTask).configureEach {
-        dependsOn tasks.named('fetchVmxSdk' + vmxTarget.name)
+        mustRunAfter tasks.named('fetchVmxSdk' + vmxTarget.name)
     }
     tasks.withType(org.gradle.nativeplatform.tasks.AbstractLinkTask).configureEach {
-        dependsOn tasks.named('fetchVmxSdk' + vmxTarget.name)
+        mustRunAfter tasks.named('fetchVmxSdk' + vmxTarget.name)
     }
     model {
         repositories {

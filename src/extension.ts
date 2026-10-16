@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as os from 'os';
 import { candidateDownloadSize, findInstallation, Installation, installComponent, InstallProgress } from './releases';
-import { configureProject, detectTarget, readState, Target } from './project';
+import { configureProject, detectTarget, readState, refreshVmxScript, Target } from './project';
 import { saveOffline } from './offline';
 import { io } from './files';
 
@@ -106,7 +106,11 @@ export function activate(context: vscode.ExtensionContext): void {
         const installation = await install(folder, progress);
         const target = detectTarget(await io.readFile(path.join(root, 'build.gradle'), 'utf8'));
         if (current && current.target === target && JSON.stringify(current.installation) === JSON.stringify(installation)) {
-            vscode.window.showInformationMessage('W4Studica is already up to date.'); return;
+            if (target === 'vmx') {
+                await refreshVmxScript(root, installation, w4Home);
+                vscode.window.showInformationMessage('W4Studica is up to date. VMX build integration was refreshed: build stays local, and SDK fetch runs during deploy.');
+            } else { vscode.window.showInformationMessage('W4Studica is already up to date.'); }
+            return;
         }
         await configureProject(root, installation, target, w4Home);
         vscode.window.showInformationMessage('W4Studica updated: GradleRIO ' + installation.gradlerio.manifest.version + ', WPILib ' + installation.allwpilib.manifest.version + '. Run Save W4Studica Offline to refresh offline dependencies.');
