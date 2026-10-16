@@ -77,10 +77,12 @@ suite('Project conversion', () => {
         assert.ok(script.includes("gradle.startParameter.taskNames.any { it.toLowerCase().contains('deploy') }"));
         assert.ok(script.includes("binary.linker.args sdkLibrary.path"));
         assert.ok(script.includes("'-Wl,--unresolved-symbols=ignore-all'"));
-        const oldScript = `binary.linker.args sdkLibrary.path, '-Wl,-rpath,/usr/local/lib/vmxpi',\n` +
+        const oldScript = `def sdkLibrary = vmxTarget.sdkPath('/usr/local/lib/vmxpi/libvmxpi_hal_cpp.so')\n` +
+            `binary.linker.args sdkLibrary.path, '-Wl,-rpath,/usr/local/lib/vmxpi',\n` +
             `                                '-Wl,-rpath-link,' + sdkLibrary.parent, '-Wl,--allow-shlib-undefined'`;
         const migrated = migrateVmxScript(oldScript);
         assert.ok(migrated.includes("'-Wl,--unresolved-symbols=ignore-all'"));
+        assert.ok(migrated.includes("def deployRequested = gradle.startParameter.taskNames.any"));
         assert.strictEqual(migrateVmxScript(migrated), migrated);
     });
     test('VMX SDK fetch is an ordering constraint, not a build dependency', () => {

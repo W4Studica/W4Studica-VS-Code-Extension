@@ -213,6 +213,10 @@ export function migrateVmxScript(script: string): string {
                                 binary.linker.args '-Wl,--unresolved-symbols=ignore-all', '-Wl,--allow-shlib-undefined'
                             }`);
     }
+    if (!migrated.includes('def deployRequested =')) {
+        migrated = migrated.replace(/^([ \t]*def sdkLibrary = vmxTarget\.sdkPath\(['"]\/usr\/local\/lib\/vmxpi\/libvmxpi_hal_cpp\.so['"]\)[ \t]*)$/m,
+            `$1\n    def deployRequested = gradle.startParameter.taskNames.any { it.toLowerCase().contains('deploy') }`);
+    }
     return migrated;
 }
 

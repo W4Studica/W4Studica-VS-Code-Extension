@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.0.5
+
+- Add the deploy-mode variable when migrating existing VMX scripts so their model rules configure correctly.
+
 ## 2.0.4
 
 - Let ordinary VMX C++ builds link without a robot-only SDK library; deploy links against the SDK fetched from the robot.
