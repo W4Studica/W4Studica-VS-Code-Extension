@@ -6,7 +6,7 @@ import { Installation } from './releases';
 import { exists, inside, io, writeTransaction } from './files';
 
 export type Target = 'vmx' | 'systemcore';
-export interface ProjectState { schemaVersion: 1 | 2; target: Target; installation: Installation; projectStorageDir: string; }
+export interface ProjectState { schemaVersion: 1 | 2; target: Target; installation: Installation; projectStorageDir: string; systemcoreHostCalls?: string[]; }
 const begin = '// BEGIN W4Studica ';
 const end = '// END W4Studica ';
 
@@ -24,6 +24,56 @@ export function removeBlock(text: string, name: string): string {
     let start = first > 0 && text[first - 1] === '\n' ? first - 1 : first;
     if (start > 0 && text[start - 1] === '\r') { start--; }
     return text.slice(0, start) + text.slice(last + (end + name).length).replace(/^\r?\n/, '');
+}
+
+function removeConnectionSettings(text: string): string {
+    text = removeBlock(text, 'connection');
+    return text.replace(/^[ \t]*username = System\.getenv\('VMX_USER'\) \?: 'ubuntu'\r?\n[ \t]*password = System\.getenv\('VMX_PASSWORD'\) \?: 'password'[ \t]*(?:\r?\n|$)/gm, '');
+}
+
+function legacyHostCalls(text: string): string[] {
+    return Array.from(text.matchAll(/\/\* W4Studica original host: ([A-Za-z0-9+/=]+) \*\//g), match => Buffer.from(match[1], 'base64').toString('utf8'));
+}
+
+export function extractSystemcoreHostCalls(text: string): string[] {
+    const mask = codeMask(text);
+    const target = /\b\w+\s*\(\s*getTargetTypeClass\s*\(\s*(['"])SystemCore\1\s*\)\s*\)\s*\{/g;
+    let match: RegExpExecArray | null;
+    while ((match = target.exec(text))) {
+        if (mask[match.index] === ' ') { continue; }
+        const open = match.index + match[0].lastIndexOf('{');
+        const bodyMask = mask.slice(open + 1, closeBrace(mask, open));
+        const body = text.slice(open + 1, closeBrace(mask, open));
+        const call = /(?:^|\n)[ \t]*(?:useDefaultSystemcoreHostName|useCustomSystemcoreHostName|setAddresses|addAddress)\s*\([^\r\n]*?\)\s*;?[ \t]*/g;
+        const calls: string[] = [];
+        let found: RegExpExecArray | null;
+        while ((found = call.exec(body))) {
+            const method = found[0].search(/(?:useDefaultSystemcoreHostName|useCustomSystemcoreHostName|setAddresses|addAddress)/);
+            if (method >= 0 && bodyMask[found.index + method] !== ' ') {
+                calls.push(found[0].trim());
+            }
+        }
+        return calls;
+    }
+    return [];
+}
+
+function setVmxConnectionSettings(text: string): string {
+    text = removeConnectionSettings(text).replace(/\/\* W4Studica original host: [A-Za-z0-9+/=]+ \*\//g, '');
+    const mask = codeMask(text);
+    const declaration = /\b\w+\s*\(\s*getTargetTypeClass\s*\(\s*(['"])VmxPi\1\s*\)\s*\)\s*\{/g;
+    let match: RegExpExecArray | null;
+    while ((match = declaration.exec(text))) {
+        if (mask[match.index] === ' ') { continue; }
+        const open = match.index + match[0].lastIndexOf('{');
+        const close = closeBrace(mask, open);
+        const body = text.slice(open + 1, close);
+        const indent = body.match(/(?:^|\r?\n)([ \t]*)team\s*=/)?.[1] || '';
+        const newline = text.includes('\r\n') ? '\r\n' : '\n';
+        const credentials = `${newline}${indent}username = System.getenv('VMX_USER') ?: 'ubuntu'${newline}${indent}password = System.getenv('VMX_PASSWORD') ?: 'password'`;
+        return text.slice(0, open + 1) + credentials + body + text.slice(close);
+    }
+    return text;
 }
 
 // Preserve indices while hiding Groovy strings and comments from structural searches.
@@ -76,9 +126,9 @@ export function detectTarget(text: string): Target {
     return found[0];
 }
 
-function convertTarget(text: string, target: Target): string {
+function convertTarget(text: string, target: Target, systemcoreHostCalls?: string[]): string {
     const current = detectTarget(text);
-    if (current === target) { return text; }
+    if (current === target) { return target === 'vmx' ? setVmxConnectionSettings(text) : text; }
     if (target === 'vmx') {
         // The existing target name is kept, so references such as deploy.targets.systemcore still work.
         text = replaceCode(text, /\bgetTargetTypeClass\s*\(\s*(['"])SystemCore\1\s*\)/g, () => "getTargetTypeClass('VmxPi')");
@@ -90,16 +140,19 @@ function convertTarget(text: string, target: Target): string {
         if (open < 0) { throw new Error('Cannot locate VmxPi target'); }
         const close = closeBrace(mask, open);
         let body = text.slice(open + 1, close);
-        // Keep the original connection calls as inert, reversible comments (never store credentials).
-        body = replaceCode(body, /\b(?:useDefaultSystemcoreHostName|useCustomSystemcoreHostName|setAddresses|addAddress)\s*\([^\n]*?\)\s*;?/g,
-            (original: string) => '/* W4Studica original host: ' + Buffer.from(original).toString('base64') + ' */');
-        body = '\n' + block('connection', "username = System.getenv('VMX_USER') ?: 'ubuntu'\npassword = System.getenv('VMX_PASSWORD') ?: 'password'") + '\n' + body;
+        body = replaceCode(body, /(?:^|\n)[ \t]*(?:useDefaultSystemcoreHostName|useCustomSystemcoreHostName|setAddresses|addAddress)\s*\([^\n]*?\)\s*;?[ \t]*/g,
+            (original: string) => original.startsWith('\n') ? '\n' : '');
         text = text.slice(0, open + 1) + body + text.slice(close);
+        text = setVmxConnectionSettings(text);
     } else {
-        text = removeBlock(text, 'connection');
-        text = text.replace(/\/\* W4Studica original host: ([A-Za-z0-9+/=]+) \*\//g, (_whole, encoded: string) => Buffer.from(encoded, 'base64').toString('utf8'));
+        text = removeConnectionSettings(text);
+        const restoredHostCalls = systemcoreHostCalls?.length ? systemcoreHostCalls : legacyHostCalls(text);
+        text = text.replace(/\/\* W4Studica original host: [A-Za-z0-9+/=]+ \*\//g, '');
         text = replaceCode(text, /\bgetTargetTypeClass\s*\(\s*(['"])VmxPi\1\s*\)/g, () => "getTargetTypeClass('SystemCore')");
-        if (!/\buse(?:Default|Custom)SystemcoreHostName\s*\(/.test(codeMask(text))) {
+        if (restoredHostCalls.length) {
+            text = replaceCode(text, /(\b\w+\s*\(\s*getTargetTypeClass\s*\(\s*(['"])SystemCore\2\s*\)\s*\)\s*\{)/g,
+                (declaration: string) => declaration + '\n' + restoredHostCalls.join('\n') + '\n');
+        } else if (!/\buse(?:Default|Custom)SystemcoreHostName\s*\(/.test(codeMask(text))) {
             // Native VMX projects have no SystemCore host call to restore.
             text = replaceCode(text, /\b\w+\s*\(\s*getTargetTypeClass\s*\(\s*(['"])SystemCore\1\s*\)\s*\)\s*\{/g,
                 (declaration: string) => declaration + "\nuseDefaultSystemcoreHostName()\n");
@@ -114,13 +167,13 @@ function convertTarget(text: string, target: Target): string {
     return text;
 }
 
-export function configureBuild(original: string, installation: Installation, target: Target): string {
+export function configureBuild(original: string, installation: Installation, target: Target, systemcoreHostCalls?: string[]): string {
     let text = removeBlock(removeBlock(original, 'libraries'), 'runtime');
     const originalPlugin = /\bid\s*(['"])org\.wpilib\.GradleRIO\1(?:\s+version\s+(['"])[^'"\n]+\2)?/g;
     let pluginCount = 0;
     text = replaceCode(text, originalPlugin, () => { pluginCount++; return 'id "org.wpilib.GradleRIO" version "' + installation.gradlerio.manifest.version + '"'; });
     if (pluginCount !== 1) { throw new Error('Expected org.wpilib.GradleRIO in a WPILib 2027 project. Legacy 2020 projects must be migrated first.'); }
-    text = convertTarget(text, target);
+    text = convertTarget(text, target, systemcoreHostCalls);
     if (target === 'vmx' && !installation.allwpilib.manifest.vmxScript) { throw new Error('The allwpilib release has no prebuilt VMX integration script (vmxScript).'); }
     // One short project hook loads the versioned repositories, VMX support, and per-project state
     // from the WPILib 2027 user installation. No absolute machine paths or caches go in the project.
@@ -224,7 +277,12 @@ export async function configureProject(root: string, installation: Installation,
     const settingsFile = path.join(root, 'settings.gradle');
     const originalBuild = await io.readFile(buildFile, 'utf8');
     const originalSettings = await exists(settingsFile) ? await io.readFile(settingsFile, 'utf8') : '';
-    changes.set(buildFile, configureBuild(originalBuild, installation, target));
+    const currentTarget = detectTarget(originalBuild);
+    const previousState = await readState(root, w4Home);
+    const systemcoreCalls = currentTarget === 'systemcore'
+        ? extractSystemcoreHostCalls(originalBuild)
+        : previousState?.systemcoreHostCalls || legacyHostCalls(originalBuild);
+    changes.set(buildFile, configureBuild(originalBuild, installation, target, systemcoreCalls));
     changes.set(settingsFile, configureSettings(originalSettings, installation));
     for (const [name, windows] of [['gradlew', false], ['gradlew.bat', true]] as [string, boolean][]) {
         const file = path.join(root, name);
@@ -241,7 +299,8 @@ export async function configureProject(root: string, installation: Installation,
     const ignore = await exists(ignoreFile) ? await io.readFile(ignoreFile, 'utf8') : '';
     const cleanIgnore = ignore.replace(/^\/?\.w4studica\/?\s*\r?\n/gm, '').replace(/\n{3,}/g, '\n\n');
     if (cleanIgnore !== ignore) { changes.set(ignoreFile, cleanIgnore); }
-    const state: ProjectState = { schemaVersion: 2, target, installation, projectStorageDir: dataDir };
+    const state: ProjectState = { schemaVersion: 2, target, installation, projectStorageDir: dataDir,
+        ...(target === 'vmx' ? { systemcoreHostCalls: systemcoreCalls } : {}) };
     changes.set(path.join(dataDir, 'config.json'), JSON.stringify(state, null, 2) + '\n');
     changes.set(path.join(w4Home, 'w4studica.gradle'), globalGradleScript);
     if (target === 'vmx' && installation.allwpilib.manifest.vmxScript) {
