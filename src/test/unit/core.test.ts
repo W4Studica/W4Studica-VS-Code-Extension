@@ -9,7 +9,7 @@ import { configureBuild, configureProject, configureSettings, detectTarget, extr
 import { Candidate, candidateDownloadSize, findInstallation, Installation, installComponent, Manifest, validateManifest } from '../../releases';
 import { atomicWrite, exists, inside, io, writeTransaction } from '../../files';
 import { extractZip } from '../../archive';
-import { runGradle, saveOffline } from '../../offline';
+import { quoteForCmd, runGradle, saveOffline } from '../../offline';
 
 const systemcore = `// SystemCore robot
 plugins { id 'cpp'; id 'org.wpilib.GradleRIO' version '2027.0.0-alpha-7' }
@@ -358,5 +358,12 @@ suite('Offline and atomic project operations', () => {
         await io.writeFile(path.join(temp, 'gradlew'), '#!/bin/sh\n[ "$W4STUDICA_ONLINE" = 1 ] && [ "$1" = build ]\n');
         await runGradle(temp, ['build'], true, () => undefined);
         await assert.rejects(runGradle(temp, ['build'], false, () => undefined), /Gradle failed/);
+    });
+
+    test('quoteForCmd quotes arguments that cmd.exe would split', () => {
+        assert.strictEqual(quoteForCmd('build'), 'build');
+        assert.strictEqual(quoteForCmd('--no-daemon'), '--no-daemon');
+        assert.strictEqual(quoteForCmd('C:\\Users\\Jane Doe\\resolve-offline.gradle'), '"C:\\Users\\Jane Doe\\resolve-offline.gradle"');
+        assert.strictEqual(quoteForCmd('a"b'), '"a""b"');
     });
 });

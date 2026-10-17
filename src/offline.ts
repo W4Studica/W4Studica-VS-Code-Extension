@@ -15,13 +15,18 @@ export const resolveScript = `allprojects { project ->
 }
 `;
 
+/** cmd.exe splits on spaces: quote what contains them (project storage paths such as C:\Users\Jane Doe\...). */
+export function quoteForCmd(argument: string): string {
+    return /[\s"&|<>^()%!]/.test(argument) ? '"' + argument.replace(/"/g, '""') + '"' : argument;
+}
+
 export async function runGradle(root: string, args: string[], online: boolean, log: (text: string) => void): Promise<void> {
     const windows = process.platform === 'win32';
     const wrapper = path.join(root, windows ? 'gradlew.bat' : 'gradlew');
     if (!await exists(wrapper)) { throw new Error('Gradle wrapper not found: ' + wrapper); }
     log('Gradle: ' + args.join(' '));
     const child = windows
-        ? spawn('cmd.exe', ['/d', '/s', '/c', '""' + wrapper + '" ' + args.join(' ') + '"'], { cwd: root, windowsVerbatimArguments: true, env: { ...process.env, W4STUDICA_ONLINE: online ? '1' : '0' } })
+        ? spawn('cmd.exe', ['/d', '/s', '/c', '""' + wrapper + '" ' + args.map(quoteForCmd).join(' ') + '"'], { cwd: root, windowsVerbatimArguments: true, env: { ...process.env, W4STUDICA_ONLINE: online ? '1' : '0' } })
         : spawn('sh', [wrapper, ...args], { cwd: root, env: { ...process.env, W4STUDICA_ONLINE: online ? '1' : '0' } });
     child.stdout.on('data', data => log(data.toString()));
     child.stderr.on('data', data => log(data.toString()));
