@@ -41,6 +41,7 @@ if (plugins.hasPlugin('cpp')) {
     def sdkReady = { new File(sdkHeaders, 'VMXPi.h').isFile() && sdkLibrary.isFile() }
     def cacheReady = { new File(sdkCache, 'usr/local/include/vmxpi/VMXPi.h').isFile() &&
         new File(sdkCache, 'usr/local/lib/vmxpi/libvmxpi_hal_cpp.so').isFile() }
+    def fetchSdkDirectory = { tasks.named('fetchVmxSdk' + vmxTarget.name).get().sdkDirectory.get().asFile }
     tasks.named('fetchVmxSdk' + vmxTarget.name) { fetchTask ->
         def sdkOutput = fetchTask.sdkDirectory
         onlyIf {
@@ -58,11 +59,20 @@ if (plugins.hasPlugin('cpp')) {
     }
     // Deploy wires the SDK fetch into the target's deploy graph. Ordering is only
     // relevant when deploy selected both tasks; plain build must stay offline.
+    // A plain build does not run the fetch task, so restore the build-directory copy from the
+    // persistent cache right before compiling or linking (`clean build` then needs no robot).
+    def restoreSdk = {
+        if (!sdkReady() && cacheReady()) {
+            project.copy { from(sdkCache); into(fetchSdkDirectory()) }
+        }
+    }
     tasks.withType(org.gradle.language.nativeplatform.tasks.AbstractNativeCompileTask).configureEach {
         mustRunAfter tasks.named('fetchVmxSdk' + vmxTarget.name)
+        doFirst(restoreSdk)
     }
     tasks.withType(org.gradle.nativeplatform.tasks.AbstractLinkTask).configureEach {
         mustRunAfter tasks.named('fetchVmxSdk' + vmxTarget.name)
+        doFirst(restoreSdk)
     }
     model {
         repositories {
