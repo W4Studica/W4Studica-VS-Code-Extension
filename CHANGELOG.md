@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.0.6
+
+- Quote Gradle arguments for cmd.exe so Save W4Studica Offline works when the project storage path contains spaces on Windows.
+- Pair with W4Studica 2027.0.0-alpha-7-w4.beta.4 releases.
+
 ## 2.0.5
 
 - Add the deploy-mode variable when migrating existing VMX scripts so their model rules configure correctly.
