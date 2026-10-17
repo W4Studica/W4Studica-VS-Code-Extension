@@ -1,11 +1,14 @@
 // Install real release ZIPs, then build fresh C++ and Java consumers through the extension's code.
-// Usage: node tools/smoke_release.js RELEASE_ROOT LOCAL_VMX_SDK
+// Usage: node tools/smoke_release.js RELEASE_ROOT LOCAL_VMX_SDK [--vmx-only]
+// The generated build.gradle loads ~/wpilib/2027/W4Studica/w4studica.gradle, so project data goes to that real folder
+// (one projects/<hash> entry per validation project; delete them afterwards). Set GRADLE_USER_HOME to an isolated Gradle
+// home (with wrapper and toolchains linked in) so a personal ~/.gradle/init.d script cannot interfere.
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { Response } = require('node-fetch');
 const { installComponent } = require('../out/releases');
-const { configureProject } = require('../out/project');
+const { configureProject, projectStorageDir } = require('../out/project');
 const { runGradle, saveOffline } = require('../out/offline');
 
 async function main() {
@@ -71,15 +74,11 @@ wpi.java.configureTestTasks(test)
         }
         fs.chmodSync(path.join(root, 'gradlew'), 0o755);
         await configureProject(root, installation, 'vmx');
-        const home = path.join(root, '.w4studica/gradle-home');
-        for (const directory of ['wrapper', 'toolchains']) {
-            const link = path.join(home, directory);
-            if (!fs.existsSync(link)) { fs.symlinkSync(path.join(os.homedir(), '.gradle', directory), link, 'dir'); }
-        }
-        const sdkLink = path.join(root, '.w4studica/vmx-sdk');
+        const dataDir = projectStorageDir(root);
+        const sdkLink = path.join(dataDir, 'vmx-sdk');
         if (!fs.existsSync(sdkLink)) { fs.symlinkSync(sdk, sdkLink, 'dir'); }
         await runGradle(root, ['--no-daemon', '--max-workers=2', 'build'], true, log);
-        await saveOffline(root, { schemaVersion: 1, target: 'vmx', installation }, log);
+        await saveOffline(root, { schemaVersion: 2, target: 'vmx', installation, projectStorageDir: dataDir }, log);
         await runGradle(root, ['--no-daemon', '--max-workers=2', 'clean', 'build'], false, log);
         if (process.argv.includes('--vmx-only')) { continue; }
         await configureProject(root, installation, 'systemcore');
