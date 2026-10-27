@@ -23,7 +23,7 @@ The old `Update WPILib Version` and `Verify the Project's build.gradle file` com
 4. While online, run `Save W4Studica Offline`. C++ VMX projects must initially fetch the SDK from the robot, so the robot must also be reachable.
 5. Once setup is complete, use `./gradlew build`, `./gradlew deploy`, or the existing WPILib extension's wrapper-based commands. On Windows, use `gradlew.bat`.
 
-Configure VMX channel mappings and Driver Station enable/disable logic in the robot project. Switching targets does not enable motors automatically. C++ code that calls the Studica API directly must use `wpi::studica::SharedVMX()` and Titan's `StudicaTitan` / `TitanEnableGuard` helpers.
+Configure VMX channel mappings and Driver Station enable/disable logic in the robot project. Switching targets does not enable motors automatically. Use `wpi::studica::Titan` for Titan control; it owns the shared VMX connection, enable keepalive and watchdog. Low-level `wpi::studica::drivers` classes are exposed through `wpi/studica/drivers/<Device>.hpp`; pass `wpi::studica::SharedVMX()` to VMX-backed drivers.
 
 ## Releases and project files
 
