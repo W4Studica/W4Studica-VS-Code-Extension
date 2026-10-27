@@ -40,7 +40,7 @@ def main():
     if args.vmx:
         if not (args.vmx / 'include').is_dir():
             parser.error('VMX include/ directory is missing')
-        for library in ['libhalsim_vmx.so', 'libhalsim_vmxd.so', 'libhalsim_vmx_studica.so', 'libstudica_drivers.so']:
+        for library in ['libhalsim_studica.so', 'libhalsim_studicad.so', 'libstudica_hardware.so', 'libstudica.so', 'libstudica_drivers.so']:
             if not (args.vmx / 'linuxarm64' / library).is_file():
                 parser.error('Missing VMX runtime: ' + library)
         if list(args.vmx.rglob('libvmxpi_hal*')) or list(args.vmx.rglob('VMXPi.h')):

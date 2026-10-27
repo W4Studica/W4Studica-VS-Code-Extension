@@ -6,7 +6,7 @@ def vmxHeaders = new File(vmxRoot, 'include')
 def vmxTarget = deploy.targets.find { it.class.name.contains('.deploy.vmx.VmxPi') }
 if (vmxTarget == null) { throw new GradleException('W4Studica: VmxPi deploy target is missing') }
 
-['libhalsim_vmx.so', 'libhalsim_vmxd.so', 'libhalsim_vmx_studica.so', 'libstudica_drivers.so'].each { name ->
+['libhalsim_studica.so', 'libhalsim_studicad.so', 'libstudica_hardware.so', 'libstudica.so', 'libstudica_drivers.so'].each { name ->
     if (!new File(vmxLib, name).isFile()) { throw new GradleException('W4Studica release is missing ' + name) }
 }
 
@@ -17,10 +17,10 @@ vmxTarget.artifacts.create('w4studicaRuntime', vmxTarget.getArtifactTypeClass('F
 }
 vmxTarget.artifacts.all { artifact ->
     if (artifact.hasProperty('environment')) {
-        artifact.environment.put('HALSIMVMX_BACKEND', vmxTarget.libraryDirectory + '/libhalsim_vmx_studica.so')
+        artifact.environment.put('HALSIMSTUDICA_BACKEND', vmxTarget.libraryDirectory + '/libstudica_hardware.so')
         def debugHal = artifact.hasProperty('debugJni') ? artifact.debugJni.get() : vmxTarget.buildType.get() == 'debug'
         artifact.halsimExtensions.replaceAll { name ->
-            name.toString() == 'libhalsim_vmx.so' && debugHal ? 'libhalsim_vmxd.so' : name.toString()
+            name.toString() == 'libhalsim_studica.so' && debugHal ? 'libhalsim_studicad.so' : name.toString()
         }
     }
     if (artifact.hasProperty('directory') && artifact.directory instanceof org.gradle.api.provider.Property &&
@@ -80,13 +80,19 @@ if (plugins.hasPlugin('cpp')) {
                 w4studicaExtension {
                     headers.srcDir vmxHeaders
                     binaries.withType(org.gradle.nativeplatform.SharedLibraryBinary) {
-                        sharedLibraryFile = new File(vmxLib, buildType.name == 'debug' ? 'libhalsim_vmxd.so' : 'libhalsim_vmx.so')
+                        sharedLibraryFile = new File(vmxLib, buildType.name == 'debug' ? 'libhalsim_studicad.so' : 'libhalsim_studica.so')
                     }
                 }
                 w4studicaBackend {
                     headers.srcDir vmxHeaders
                     binaries.withType(org.gradle.nativeplatform.SharedLibraryBinary) {
-                        sharedLibraryFile = new File(vmxLib, 'libhalsim_vmx_studica.so')
+                        sharedLibraryFile = new File(vmxLib, 'libstudica_hardware.so')
+                    }
+                }
+                w4studicaRuntime {
+                    headers.srcDir vmxHeaders
+                    binaries.withType(org.gradle.nativeplatform.SharedLibraryBinary) {
+                        sharedLibraryFile = new File(vmxLib, 'libstudica.so')
                     }
                 }
                 w4studicaDrivers {
@@ -104,6 +110,7 @@ if (plugins.hasPlugin('cpp')) {
                         if (binary.targetPlatform.name == wpi.platforms.linuxarm64) {
                             binary.lib library: 'w4studicaExtension', linkage: 'shared'
                             binary.lib library: 'w4studicaBackend', linkage: 'shared'
+                            binary.lib library: 'w4studicaRuntime', linkage: 'shared'
                             binary.lib library: 'w4studicaDrivers', linkage: 'shared'
                             binary.cppCompiler.args '-I' + sdkHeaders.path
                             if (deployRequested || sdkLibrary.isFile()) {
