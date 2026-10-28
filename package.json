@@ -4,10 +4,10 @@
   "description": "W4Studica release installer, SystemCore / VMX target switching and offline builds",
   "icon": "resources/w4studica-icon.png",
   "publisher": "w4studica",
-  "version": "2.0.6",
+  "version": "2.0.7",
   "repository": {
     "type": "git",
-    "url": "https://github.com/kimseungsu-zzz/VMXVSCodeExtension_studica_wsr"
+    "url": "https://github.com/W4Studica/W4Studica-VS-Code-Extension"
   },
   "engines": {
     "vscode": "^1.85.0"

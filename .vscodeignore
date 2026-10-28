@@ -12,3 +12,5 @@ release/**
 **/*.map
 **/*.ts
 resources/VMX_WSR_128.png
+
+*.sha256
