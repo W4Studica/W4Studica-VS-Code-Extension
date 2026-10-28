@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.0.7
+
+- Pair with W4Studica 2027.0.0-alpha-7-w4.beta.7 and automatically select the VMX hardware backend.
+- Compile-check the public Studica APIs when validating release consumer builds.
+- Include dependency notices and clarify the licensing scope of inherited extension sources.
+
 ## 2.0.6
 
 - Quote Gradle arguments for cmd.exe so Save W4Studica Offline works when the project storage path contains spaces on Windows.
