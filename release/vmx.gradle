@@ -17,7 +17,6 @@ vmxTarget.artifacts.create('w4studicaRuntime', vmxTarget.getArtifactTypeClass('F
 }
 vmxTarget.artifacts.all { artifact ->
     if (artifact.hasProperty('environment')) {
-        artifact.environment.put('HALSIMSTUDICA_BACKEND', vmxTarget.libraryDirectory + '/libstudica_hardware.so')
         def debugHal = artifact.hasProperty('debugJni') ? artifact.debugJni.get() : vmxTarget.buildType.get() == 'debug'
         artifact.halsimExtensions.replaceAll { name ->
             name.toString() == 'libhalsim_studica.so' && debugHal ? 'libhalsim_studicad.so' : name.toString()
