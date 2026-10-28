@@ -51,7 +51,8 @@ def deployArtifact = deploy.targets.robot.artifacts.${artifact}
 } } }
 `;
             fs.mkdirSync(path.join(root, 'src/main/cpp'), { recursive: true });
-            fs.writeFileSync(path.join(root, 'src/main/cpp/main.cpp'), '#include "wpi/hardware/discrete/AnalogInput.hpp"\nint main() { wpi::AnalogInput input{0}; return input.GetChannel(); }\n');
+            // Compile and link the current public Studica APIs; this binary is never run on hardware.
+            fs.writeFileSync(path.join(root, 'src/main/cpp/main.cpp'), '#include "wpi/hardware/discrete/AnalogInput.hpp"\n#include "wpi/studica/Titan.hpp"\n#include "wpi/studica/drivers/Titan.hpp"\n#include <type_traits>\nstatic_assert(std::is_class_v<wpi::studica::drivers::Titan>);\nint main() { wpi::AnalogInput input{0}; wpi::studica::Titan titan{42}; titan.SetSpeed(0, 0.0); return input.GetChannel(); }\n');
         } else {
             build += `dependencies {
     implementation wpi.java.deps.wpilib()
@@ -81,6 +82,10 @@ wpi.java.configureTestTasks(test)
         await saveOffline(root, { schemaVersion: 2, target: 'vmx', installation, projectStorageDir: dataDir }, log);
         await runGradle(root, ['--no-daemon', '--max-workers=2', 'clean', 'build'], false, log);
         if (process.argv.includes('--vmx-only')) { continue; }
+        if (language === 'cpp') {
+            // SystemCore does not provide the VMX-specific API.
+            fs.writeFileSync(path.join(root, 'src/main/cpp/main.cpp'), '#include "wpi/hardware/discrete/AnalogInput.hpp"\nint main() { wpi::AnalogInput input{0}; return input.GetChannel(); }\n');
+        }
         await configureProject(root, installation, 'systemcore');
         await runGradle(root, ['--no-daemon', '--max-workers=2', 'build'], true, log);
     }
