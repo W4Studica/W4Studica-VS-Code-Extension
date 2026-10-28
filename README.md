@@ -63,3 +63,7 @@ Tests run without starting VS Code or a robot. They cover target switching in bo
 On POSIX systems, run the integration test with a real Gradle/JDK using `node tools/smoke_offline.js /path/to/gradle`. It downloads dependencies from a test HTTP Maven repository, shuts the server down, and verifies that `clean build` succeeds using the saved dependencies and automatic offline mode.
 
 `node_modules`, `out`, and `.vsix` files are generated artifacts and are not checked into the repository. Create a distributable package separately with `npx @vscode/vsce package`.
+
+## License
+
+W4Studica contributions: [MIT](LICENSE). Inherited material and dependencies: [ThirdPartyNotices.txt](ThirdPartyNotices.txt). The original extension has no declared license; this is not a blanket relicensing of its code or assets.

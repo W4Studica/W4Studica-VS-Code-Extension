@@ -62,6 +62,12 @@ Include artifacts for SystemCore, linuxarm64, and the development computer's des
 
 Use the standard-library-only Python tool in the extension repository. It does not compile code or upload anything to GitHub.
 
+The packager reads license notices from the matching sibling component checkout.
+Use `--source-dir /path/to/checkout` when building elsewhere. Every ZIP part carries
+the component notices; repeated copies use distinct `licenses/partN/` paths so
+the installer can extract all parts without overwriting files. VMX input must
+include the `licenses/` folder produced by `build_vmx_runtime.py`.
+
 ```sh
 python3 tools/package_release.py gradlerio \
   --version 2027.0.0-alpha-7-w4.1 \

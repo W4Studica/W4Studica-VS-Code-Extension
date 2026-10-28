@@ -11,3 +11,4 @@ release/**
 **/.eslintrc.json
 **/*.map
 **/*.ts
+resources/VMX_WSR_128.png
