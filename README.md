@@ -19,7 +19,7 @@ The old `Update WPILib Version` and `Verify the Project's build.gradle file` com
 
 1. Open a WPILib **2027 Groovy project**. You need a JDK and an Internet connection to access GitHub.
 2. Run `Update W4Studica Version` or switch to the VMX target. The matching binaries must already be published in both repositories using the [release format](RELEASES.md).
-3. For VMX, install Robot-Manager and the VMX HAL on the robot. The VMX connection fallback credentials are always username `ubuntu` and password `password`.
+3. For VMX, install Robot-Manager and the VMX HAL on the robot. The VMX connection fallback credentials are always username `lvuser` and password `password` (`install.sh` also creates an `admin` account for interactive SSH).
 4. While online, run `Save W4Studica Offline`. C++ VMX projects must initially fetch the SDK from the robot, so the robot must also be reachable.
 5. Once setup is complete, use `./gradlew build`, `./gradlew deploy`, or the existing WPILib extension's wrapper-based commands. On Windows, use `gradlew.bat`.
 
