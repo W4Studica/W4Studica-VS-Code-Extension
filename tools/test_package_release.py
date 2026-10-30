@@ -24,8 +24,8 @@ class ReleaseLicenseTest(unittest.TestCase):
         self.vmx = self.root / 'vmx'
         (self.vmx / 'include').mkdir(parents=True)
         (self.vmx / 'linuxarm64').mkdir()
-        for name in ['libhalsim_studica.so', 'libhalsim_studicad.so', 'libstudica_hardware.so',
-                     'libstudica.so', 'libstudica_drivers.so']:
+        for name in ['libhalsim_studica.so', 'libhalsim_studicad.so', 'libhalsim_ds_relay.so', 'libhalsim_ds_relayd.so',
+                     'libstudica_hardware.so', 'libstudica.so', 'libstudica_drivers.so']:
             (self.vmx / 'linuxarm64' / name).write_bytes(b'fixture')
         (self.vmx / 'licenses').mkdir()
         for source, name in [('LICENSE.md', 'WPILib-LICENSE.md'),

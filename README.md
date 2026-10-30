@@ -25,6 +25,8 @@ The old `Update WPILib Version` and `Verify the Project's build.gradle file` com
 
 Configure VMX channel mappings and Driver Station enable/disable logic in the robot project. Switching targets does not enable motors automatically. Use `wpi::studica::Titan` for Titan control; it owns the shared VMX connection, enable keepalive and watchdog. Low-level `wpi::studica::drivers` classes are exposed through `wpi/studica/drivers/<Device>.hpp`; pass `wpi::studica::SharedVMX()` to VMX-backed drivers.
 
+Driver Station control works like SystemCore on a VMX-pi: the release ships `libhalsim_ds_relay.so`, Robot-Manager's `mrccomm` daemon receives the Driver Station packets and the relay extension applies them to the program. Nothing extra is configured in the project.
+
 ## Releases and project files
 
 The default GitHub repositories are `W4Studica/GradleRIO` and `W4Studica/allwpilib`. Change them with the `w4studica.gradleRIORepository` and `w4studica.allwpilibRepository` settings. `w4studica.includePrereleases` defaults to `true`.
